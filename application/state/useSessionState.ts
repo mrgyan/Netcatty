@@ -455,6 +455,8 @@ export const useSessionState = () => {
           moshEnabled: session.moshEnabled,
           shellType: nextShellType,
           charset: session.charset,
+          localShell: session.localShell,
+          localShellArgs: session.localShellArgs,
         };
 
         // Add pane to existing workspace
@@ -487,6 +489,8 @@ export const useSessionState = () => {
         moshEnabled: session.moshEnabled,
         shellType: nextShellType,
         charset: session.charset,
+        localShell: session.localShell,
+        localShellArgs: session.localShellArgs,
       };
 
       const hint: SplitHint = {
@@ -663,6 +667,8 @@ export const useSessionState = () => {
         shellType: nextShellType,
         charset: session.charset,
         serialConfig: session.serialConfig,
+        localShell: session.localShell,
+        localShellArgs: session.localShellArgs,
       };
 
       setActiveTabId(newSession.id);

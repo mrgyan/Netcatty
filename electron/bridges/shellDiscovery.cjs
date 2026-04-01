@@ -590,9 +590,17 @@ function discoverUnixShells() {
       if (!seen.has(envReal) && fs.existsSync(envShell)) {
         const base = path.basename(envShell);
         const args = isLoginShell(base) ? ["-l"] : [];
+        // Check if basename already exists in the list to disambiguate
+        const hasDuplicate = shells.some((s) => path.basename(s.command) === base);
+        const id = hasDuplicate
+          ? `${base}-${path.basename(path.dirname(envShell))}`
+          : base;
+        const name = hasDuplicate
+          ? `${mapUnixShellName(base)} (${envShell})`
+          : mapUnixShellName(base);
         shells.unshift({
-          id: base,
-          name: mapUnixShellName(base),
+          id,
+          name,
           command: envShell,
           args,
           icon: mapUnixShellIcon(base),

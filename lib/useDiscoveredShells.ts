@@ -25,6 +25,8 @@ export function useDiscoveredShells(): DiscoveredShell[] {
       setShells(result);
     }).catch((err) => {
       console.warn("Failed to discover shells:", err);
+      // Clear the failed promise so the next mount can retry
+      shellPromise = null;
     });
   }, []);
 
@@ -32,10 +34,19 @@ export function useDiscoveredShells(): DiscoveredShell[] {
 }
 
 /**
+ * Check whether a localShell value looks like a file path (custom entry)
+ * rather than a discovered shell ID. Paths contain slashes or backslashes,
+ * or end with common executable extensions.
+ */
+function looksLikePath(value: string): boolean {
+  return /[/\\]/.test(value) || /\.\w+$/.test(value);
+}
+
+/**
  * Resolve a localShell setting value to shell command and args.
  * The value can be a discovered shell id (e.g., "wsl-ubuntu", "pwsh")
  * or a custom path (e.g., "/usr/local/bin/fish").
- * Returns { command, args } or null if unresolved.
+ * Returns { command, args } or null if unresolved / discovery not ready.
  */
 export function resolveShellSetting(
   localShell: string,
@@ -49,8 +60,15 @@ export function resolveShellSetting(
     return { command: shell.command, args: shell.args };
   }
 
-  // Treat as a custom shell path (backward compat with existing settings)
-  return { command: localShell };
+  // If it looks like a file path, treat as custom shell (backward compat)
+  if (looksLikePath(localShell)) {
+    return { command: localShell };
+  }
+
+  // Value looks like a shell ID but discovery hasn't loaded yet or no match.
+  // Return null so the caller falls back to the system default shell,
+  // rather than trying to execute an ID string like "wsl-ubuntu" as a command.
+  return null;
 }
 
 const DISTRO_ICONS = new Set([
