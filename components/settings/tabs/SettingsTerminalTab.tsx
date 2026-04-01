@@ -306,7 +306,7 @@ export default function SettingsTerminalTab(props: {
   useEffect(() => {
     if (!terminalSettings.localShell) return;
     setShowCustomShellInput(!discoveredShells.some(s => s.id === terminalSettings.localShell));
-  }, [discoveredShells]);
+  }, [discoveredShells, terminalSettings.localShell]);
   const [themeModalOpen, setThemeModalOpen] = useState(false);
 
   // Subscribe to custom theme changes so editing in-place triggers re-render

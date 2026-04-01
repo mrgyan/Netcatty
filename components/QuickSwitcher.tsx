@@ -174,6 +174,10 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
       results.forEach((host) =>
         items.push({ type: "host", id: host.id, data: host }),
       );
+      // Also include matching shells in search results
+      filteredShells.forEach((shell) =>
+        items.push({ type: "shell", id: shell.id }),
+      );
     }
 
     // Build index map for O(1) lookup

@@ -1,10 +1,9 @@
 /**
- * Shell Discovery — Windows shell detection
+ * Shell Discovery — cross-platform shell detection
  *
- * Detects available shells on Windows: CMD, PowerShell 5.1, PowerShell Core
- * (pwsh), WSL distros, Git Bash, and Cygwin.
- *
- * Registry access uses `reg.exe` via child_process — no native npm dependency.
+ * Detects available shells on Windows (CMD, PowerShell, WSL, Git Bash, Cygwin)
+ * and Unix/macOS (via /etc/shells). Registry access on Windows uses `reg.exe`
+ * via child_process — no native npm dependency.
  */
 
 const fs = require("node:fs");
