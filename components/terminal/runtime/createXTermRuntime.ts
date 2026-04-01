@@ -584,7 +584,9 @@ export const createXTermRuntime = (ctx: CreateXTermRuntimeContext): XTermRuntime
       }
 
       if (ctx.isBroadcastEnabledRef.current && ctx.onBroadcastInputRef.current) {
-        ctx.onBroadcastInputRef.current(data, ctx.sessionId);
+        // Use remapped data so broadcast peers also receive the correct byte
+        const broadcastData = (data === "\x7f" && ctx.host.backspaceBehavior === "ctrl-h") ? "\x08" : data;
+        ctx.onBroadcastInputRef.current(broadcastData, ctx.sessionId);
       }
 
       scrollToBottomAfterInput(data);
