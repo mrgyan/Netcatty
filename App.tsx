@@ -1091,9 +1091,13 @@ function App({ settings }: { settings: SettingsState }) {
   }, []);
 
   // Wrapper to create local terminal with logging
-  const handleCreateLocalTerminal = useCallback(() => {
+  const handleCreateLocalTerminal = useCallback((shell?: { command: string; args?: string[] }) => {
     const { username, hostname } = systemInfoRef.current;
-    const sessionId = createLocalTerminalWithCurrentShell();
+    const sessionId = createLocalTerminal({
+      shellType: classifyLocalShellType(shell?.command || terminalSettings.localShell, navigator.userAgent),
+      shell: shell?.command,
+      shellArgs: shell?.args,
+    });
     addConnectionLog({
       sessionId,
       hostId: '',
@@ -1106,7 +1110,7 @@ function App({ settings }: { settings: SettingsState }) {
       localHostname: hostname,
       saved: false,
     });
-  }, [addConnectionLog, createLocalTerminalWithCurrentShell]);
+  }, [addConnectionLog, createLocalTerminal, terminalSettings.localShell]);
 
   const resolveEffectiveHost = useCallback((host: Host): Host => {
     if (!host.group) return host;
@@ -1513,8 +1517,8 @@ function App({ settings }: { settings: SettingsState }) {
               setIsQuickSwitcherOpen(false);
               setQuickSearch('');
             }}
-            onCreateLocalTerminal={() => {
-              handleCreateLocalTerminal();
+            onCreateLocalTerminal={(shell) => {
+              handleCreateLocalTerminal(shell);
               setIsQuickSwitcherOpen(false);
               setQuickSearch('');
             }}

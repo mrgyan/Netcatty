@@ -40,6 +40,8 @@ export const useSessionState = () => {
 
   const createLocalTerminal = useCallback((options?: {
     shellType?: TerminalSession['shellType'];
+    shell?: string;
+    shellArgs?: string[];
   }) => {
     const sessionId = crypto.randomUUID();
     const localHostId = `local-${sessionId}`;
@@ -52,6 +54,8 @@ export const useSessionState = () => {
       status: 'connecting',
       protocol: 'local',
       shellType: options?.shellType,
+      localShell: options?.shell,
+      localShellArgs: options?.shellArgs,
     };
     setSessions(prev => [...prev, newSession]);
     setActiveTabId(sessionId);

@@ -764,8 +764,10 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
     }
 
     try {
-      // Get local shell configuration from terminal settings
-      const localShell = ctx.terminalSettings?.localShell;
+      // Per-session shell from discovery takes priority over global setting
+      const sessionShell = ctx.host.localShell;
+      const sessionShellArgs = ctx.host.localShellArgs;
+      const localShell = sessionShell || ctx.terminalSettings?.localShell;
       const localStartDir = ctx.terminalSettings?.localStartDir;
 
       const id = await ctx.terminalBackend.startLocalSession({
@@ -773,6 +775,7 @@ export const createTerminalSessionStarters = (ctx: TerminalSessionStartersContex
         cols: term.cols,
         rows: term.rows,
         shell: localShell,
+        shellArgs: sessionShellArgs,
         cwd: localStartDir,
         env: {
           TERM: ctx.terminalSettings?.terminalEmulationType ?? "xterm-256color",

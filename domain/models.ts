@@ -126,6 +126,9 @@ export interface Host {
   pinned?: boolean;
   // Timestamp of last successful connection, used for Recently Connected section
   lastConnectedAt?: number;
+  // Per-session shell override for local terminals (from shell discovery)
+  localShell?: string;
+  localShellArgs?: string[];
 }
 
 export type KeyType = 'RSA' | 'ECDSA' | 'ED25519';
@@ -666,6 +669,8 @@ export interface TerminalSession {
   charset?: string; // Connection-time charset override (e.g. for quick-connect serial)
   // Serial-specific connection settings
   serialConfig?: SerialConfig;
+  localShell?: string;       // Shell command for local terminals (from discovery)
+  localShellArgs?: string[]; // Shell args for local terminals (from discovery)
 }
 
 export interface RemoteFile {
