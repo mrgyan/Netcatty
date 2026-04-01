@@ -3,6 +3,7 @@ import {
   LayoutGrid,
   Search,
   FolderLock,
+  Terminal,
   TerminalSquare,
 } from "lucide-react";
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -165,10 +166,14 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
       workspaces.forEach((w) =>
         items.push({ type: "workspace", id: w.id, data: w }),
       );
-      // Local shells
-      filteredShells.forEach((shell) =>
-        items.push({ type: "shell", id: shell.id }),
-      );
+      // Local shells (or fallback action if discovery not ready)
+      if (filteredShells.length > 0) {
+        filteredShells.forEach((shell) =>
+          items.push({ type: "shell", id: shell.id }),
+        );
+      } else {
+        items.push({ type: "action", id: "local-terminal" });
+      }
     } else {
       // Recent connections only
       results.forEach((host) =>
@@ -394,7 +399,8 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
             </div>
 
             {/* Local Shells section */}
-            {filteredShells.length > 0 && (
+            {/* Local Shells or fallback Local Terminal */}
+            {filteredShells.length > 0 ? (
               <div>
                 <div className="px-4 py-1.5">
                   <span className="text-xs font-medium text-muted-foreground">
@@ -434,6 +440,33 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                     </div>
                   );
                 })}
+              </div>
+            ) : onCreateLocalTerminal && (
+              <div>
+                <div className="px-4 py-1.5">
+                  <span className="text-xs font-medium text-muted-foreground">
+                    {t("qs.localShells")}
+                  </span>
+                </div>
+                <div
+                  className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
+                    getItemIndex("action", "local-terminal") === selectedIndex
+                      ? "bg-primary/15"
+                      : "hover:bg-muted/50"
+                  }`}
+                  onClick={() => {
+                    onCreateLocalTerminal();
+                    onClose();
+                  }}
+                  onMouseEnter={() =>
+                    setSelectedIndex(getItemIndex("action", "local-terminal"))
+                  }
+                >
+                  <div className="h-6 w-6 rounded flex items-center justify-center text-muted-foreground">
+                    <Terminal size={16} />
+                  </div>
+                  <span className="text-sm font-medium">{t("qs.localTerminal")}</span>
+                </div>
               </div>
             )}
           </div>
