@@ -15,6 +15,7 @@ const sessionLogStreamManager = require("./sessionLogStreamManager.cjs");
 const { detectShellKind } = require("./ai/ptyExec.cjs");
 const { trackSessionIdlePrompt } = require("./ai/shellUtils.cjs");
 const { createZmodemSentry } = require("./zmodemHelper.cjs");
+const { discoverShells } = require("./shellDiscovery.cjs");
 
 // Shared references
 let sessions = null;
@@ -253,7 +254,7 @@ function startLocalSession(event, payload) {
     `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const defaultShell = getDefaultLocalShell();
   const shell = normalizeExecutablePath(payload?.shell) || defaultShell;
-  const shellArgs = getLocalShellArgs(shell);
+  const shellArgs = payload?.shellArgs ?? getLocalShellArgs(shell);
   const shellKind = detectShellKind(shell);
   const env = applyLocaleDefaults({
     ...process.env,
@@ -1044,6 +1045,7 @@ function registerHandlers(ipcMain) {
   ipcMain.handle("netcatty:serial:list", listSerialPorts);
   ipcMain.handle("netcatty:local:defaultShell", getDefaultShell);
   ipcMain.handle("netcatty:local:validatePath", validatePath);
+  ipcMain.handle("netcatty:shells:discover", () => discoverShells());
   ipcMain.on("netcatty:write", writeToSession);
   ipcMain.on("netcatty:resize", resizeSession);
   ipcMain.on("netcatty:close", closeSession);

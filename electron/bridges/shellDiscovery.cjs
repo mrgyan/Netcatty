@@ -457,11 +457,189 @@ function discoverWindowsShells() {
 }
 
 // ---------------------------------------------------------------------------
+// Unix shell detection helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Map a Unix shell binary basename to a human-readable display name.
+ *
+ * @param {string} basename  e.g. "zsh", "bash", "nu"
+ * @returns {string}
+ */
+function mapUnixShellName(basename) {
+  const map = {
+    zsh: "Zsh",
+    bash: "Bash",
+    fish: "Fish",
+    sh: "sh",
+    ksh: "Ksh",
+    tcsh: "Tcsh",
+    csh: "Csh",
+    dash: "Dash",
+    nu: "Nushell",
+    pwsh: "PowerShell",
+  };
+  return map[basename] || basename;
+}
+
+/**
+ * Map a Unix shell binary basename to an icon identifier.
+ *
+ * @param {string} basename  e.g. "zsh", "fish", "nu"
+ * @returns {string}
+ */
+function mapUnixShellIcon(basename) {
+  const map = {
+    zsh: "zsh",
+    bash: "bash",
+    fish: "fish",
+    sh: "terminal",
+    ksh: "terminal",
+    tcsh: "terminal",
+    csh: "terminal",
+    dash: "terminal",
+    nu: "nushell",
+    pwsh: "pwsh",
+  };
+  return map[basename] || "terminal";
+}
+
+/**
+ * Returns true for shells that should be launched with the `-l` (login) flag.
+ *
+ * @param {string} basename
+ * @returns {boolean}
+ */
+function isLoginShell(basename) {
+  return ["bash", "zsh", "fish", "ksh", "sh"].includes(basename);
+}
+
+// ---------------------------------------------------------------------------
+// Main discovery entry point for Unix
+// ---------------------------------------------------------------------------
+
+/**
+ * Discover all available shells on a Unix/macOS system by reading /etc/shells.
+ * The shell referenced by $SHELL is marked as default. If $SHELL is not in
+ * /etc/shells it is prepended to the list.
+ *
+ * @returns {Array<{id: string, name: string, command: string, args: string[], icon: string, isDefault?: boolean}>}
+ */
+function discoverUnixShells() {
+  const shells = [];
+  const seen = new Set();
+
+  // Read /etc/shells — each non-comment line is an absolute path.
+  let etcShellPaths = [];
+  try {
+    const content = fs.readFileSync("/etc/shells", "utf8");
+    etcShellPaths = content
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith("#"));
+  } catch (_err) {
+    // /etc/shells not readable — fall through to $SHELL only.
+  }
+
+  // Filter to existing files and deduplicate by real path.
+  const validPaths = [];
+  for (const shellPath of etcShellPaths) {
+    try {
+      if (!fs.existsSync(shellPath)) continue;
+      const real = fs.realpathSync(shellPath);
+      if (seen.has(real)) continue;
+      seen.add(real);
+      validPaths.push(shellPath);
+    } catch (_err) {
+      // Skip unresolvable paths.
+    }
+  }
+
+  // Build DiscoveredShell objects.
+  for (const shellPath of validPaths) {
+    const base = path.basename(shellPath);
+    const args = isLoginShell(base) ? ["-l"] : [];
+    shells.push({
+      id: base,
+      name: mapUnixShellName(base),
+      command: shellPath,
+      args,
+      icon: mapUnixShellIcon(base),
+    });
+  }
+
+  // Ensure $SHELL is present — prepend it if missing.
+  const envShell = process.env.SHELL;
+  if (envShell) {
+    try {
+      const envReal = fs.realpathSync(envShell);
+      if (!seen.has(envReal) && fs.existsSync(envShell)) {
+        const base = path.basename(envShell);
+        const args = isLoginShell(base) ? ["-l"] : [];
+        shells.unshift({
+          id: base,
+          name: mapUnixShellName(base),
+          command: envShell,
+          args,
+          icon: mapUnixShellIcon(base),
+        });
+      }
+    } catch (_err) {
+      // $SHELL path invalid — ignore.
+    }
+  }
+
+  // Mark $SHELL as default (match by command path or basename).
+  if (envShell) {
+    const defaultShell =
+      shells.find((s) => s.command === envShell) ||
+      shells.find((s) => s.id === path.basename(envShell));
+    if (defaultShell) {
+      defaultShell.isDefault = true;
+    }
+  }
+
+  // Fallback: mark first shell as default if none matched.
+  if (shells.length > 0 && !shells.some((s) => s.isDefault)) {
+    shells[0].isDefault = true;
+  }
+
+  return shells;
+}
+
+// ---------------------------------------------------------------------------
+// Unified shell discovery entry point
+// ---------------------------------------------------------------------------
+
+/**
+ * Discover all available shells for the current platform.
+ * Results are cached after the first call.
+ *
+ * @returns {Array<{id: string, name: string, command: string, args: string[], icon: string, isDefault?: boolean}>}
+ */
+function discoverShells() {
+  if (cachedShells) return cachedShells;
+
+  if (process.platform === "win32") {
+    cachedShells = discoverWindowsShells();
+  } else {
+    cachedShells = discoverUnixShells();
+  }
+
+  return cachedShells;
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
 module.exports = {
+  discoverShells,
   discoverWindowsShells,
+  discoverUnixShells,
+  mapUnixShellName,
+  mapUnixShellIcon,
+  isLoginShell,
   regQueryValue,
   regEnumSubkeys,
   findExecutableOnPath,
