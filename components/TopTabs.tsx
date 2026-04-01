@@ -75,13 +75,11 @@ const SessionTabIcon: React.FC<{ host: Host | undefined; isActive: boolean; prot
     const iconId = shellIcon || host?.localShellIcon;
     if (iconId) {
       return (
-        <div className={boxBase} style={{ backgroundColor: 'color-mix(in srgb, var(--top-tabs-accent, hsl(var(--accent))) 15%, transparent)' }}>
-          <img
-            src={getShellIconPath(iconId)}
-            alt={iconId}
-            className={cn(iconSize, "object-contain", isMonochromeShellIcon(iconId) && "dark:invert")}
-          />
-        </div>
+        <img
+          src={getShellIconPath(iconId)}
+          alt={iconId}
+          className={cn("shrink-0 h-4 w-4 object-contain", isMonochromeShellIcon(iconId) && "dark:invert")}
+        />
       );
     }
     const logo = DISTRO_LOGOS[localOsId];

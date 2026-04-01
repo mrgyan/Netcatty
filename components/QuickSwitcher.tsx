@@ -424,13 +424,11 @@ const QuickSwitcherInner: React.FC<QuickSwitcherProps> = ({
                       }}
                       onMouseEnter={() => setSelectedIndex(idx)}
                     >
-                      <div className="h-6 w-6 rounded flex items-center justify-center">
-                        <img
-                          src={getShellIconPath(shell.icon)}
-                          alt={shell.name}
-                          className={`h-5 w-5${isMonochromeShellIcon(shell.icon) ? " dark:invert" : ""}`}
-                        />
-                      </div>
+                      <img
+                        src={getShellIconPath(shell.icon)}
+                        alt={shell.name}
+                        className={`h-6 w-6 shrink-0${isMonochromeShellIcon(shell.icon) ? " dark:invert" : ""}`}
+                      />
                       <span className="text-sm font-medium">{shell.name}</span>
                       {shell.isDefault && (
                         <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
