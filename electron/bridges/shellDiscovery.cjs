@@ -556,12 +556,27 @@ function discoverUnixShells() {
   }
 
   // Build DiscoveredShell objects.
+  // Track basename counts to detect duplicates (e.g., /bin/bash vs /usr/local/bin/bash)
+  const baseCount = new Map();
+  for (const shellPath of validPaths) {
+    const base = path.basename(shellPath);
+    baseCount.set(base, (baseCount.get(base) || 0) + 1);
+  }
+
   for (const shellPath of validPaths) {
     const base = path.basename(shellPath);
     const args = isLoginShell(base) ? ["-l"] : [];
+    // Use basename as id when unique, otherwise include parent dir to disambiguate
+    const needsDisambiguation = baseCount.get(base) > 1;
+    const id = needsDisambiguation
+      ? `${base}-${path.basename(path.dirname(shellPath))}`
+      : base;
+    const name = needsDisambiguation
+      ? `${mapUnixShellName(base)} (${shellPath})`
+      : mapUnixShellName(base);
     shells.push({
-      id: base,
-      name: mapUnixShellName(base),
+      id,
+      name,
       command: shellPath,
       args,
       icon: mapUnixShellIcon(base),
