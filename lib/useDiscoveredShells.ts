@@ -61,7 +61,7 @@ export function resolveShellSetting(
   // Discovery hasn't loaded yet. If the value looks like a path or bare
   // executable (no hyphens — shell IDs like "wsl-ubuntu" always have hyphens),
   // pass through. Otherwise return null to use the system default.
-  if (/[/\\]/.test(localShell) || !/\-/.test(localShell)) {
+  if (/[/\\]/.test(localShell) || !/-/.test(localShell)) {
     return { command: localShell };
   }
 
