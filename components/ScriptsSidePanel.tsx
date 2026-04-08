@@ -119,16 +119,16 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
     onSnippetClick(command, noAutoRun);
   }, [onSnippetClick]);
 
-  if (!isVisible) return null;
-
-  const hasAnyContent = snippets.length > 0 || packages.length > 0;
-
   const handleAddSnippet = useCallback(() => {
     // Let the App shell listen and navigate to the Snippets section with
     // the "add" panel pre-opened, so the user does not have to leave the
     // terminal to jump back and click "New Snippet".
     window.dispatchEvent(new CustomEvent('netcatty:snippets:add'));
   }, []);
+
+  if (!isVisible) return null;
+
+  const hasAnyContent = snippets.length > 0 || packages.length > 0;
 
   return (
     <div
