@@ -150,6 +150,9 @@ interface VaultViewProps {
   // Optional: navigate to a specific section on mount or when changed
   navigateToSection?: VaultSection | null;
   onNavigateToSectionHandled?: () => void;
+  // Monotonic trigger — each time it changes, SnippetsManager opens
+  // its "add snippet" panel. Dispatched by ScriptsSidePanel "+" button.
+  openSnippetAddTrigger?: number;
 }
 
 const VaultViewInner: React.FC<VaultViewProps> = ({
@@ -195,6 +198,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
   onUpdateGroupConfigs,
   navigateToSection,
   onNavigateToSectionHandled,
+  openSnippetAddTrigger,
 }) => {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement>(null);
@@ -2787,6 +2791,7 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                 Array.from(new Set([...customGroups, groupPath])),
               )
             }
+            openAddTrigger={openSnippetAddTrigger}
           />
         )}
         {currentSection === "keys" && (

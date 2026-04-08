@@ -38,6 +38,10 @@ interface SnippetsManagerProps {
   managedSources?: ManagedSource[];
   onSaveHost?: (host: Host) => void;
   onCreateGroup?: (groupPath: string) => void;
+  // Monotonic trigger — when this value changes (and is truthy), the
+  // manager opens its "add snippet" edit panel. Used so the terminal-side
+  // ScriptsSidePanel "+" button can jump straight into the add flow.
+  openAddTrigger?: number;
 }
 
 type RightPanelMode = 'none' | 'edit-snippet' | 'history' | 'select-targets';
@@ -61,6 +65,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   managedSources = [],
   onSaveHost,
   onCreateGroup,
+  openAddTrigger,
 }) => {
   const { t } = useI18n();
   // Panel state
@@ -292,6 +297,29 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     }
     setRightPanelMode('edit-snippet');
   };
+
+  // When the parent bumps openAddTrigger (e.g. user clicked "+" on the
+  // terminal-side ScriptsSidePanel), jump straight into the add panel.
+  // We track the last-seen value in a ref so a plain re-mount with an
+  // unchanged trigger (e.g. user navigating back to Snippets later) does
+  // not unexpectedly re-open the add panel.
+  const lastSeenAddTriggerRef = useRef<number | undefined>(openAddTrigger);
+  useEffect(() => {
+    if (openAddTrigger === undefined) return;
+    if (lastSeenAddTriggerRef.current === openAddTrigger) return;
+    lastSeenAddTriggerRef.current = openAddTrigger;
+    setEditingSnippet({
+      label: '',
+      command: '',
+      package: selectedPackage || '',
+      targets: [],
+    });
+    setTargetSelection([]);
+    setRightPanelMode('edit-snippet');
+    // Intentionally only depend on openAddTrigger: we want to react to the
+    // explicit trigger bump, not to every selectedPackage change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openAddTrigger]);
 
   const handleSubmit = () => {
     if (editingSnippet.label && editingSnippet.command) {
