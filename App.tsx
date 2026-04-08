@@ -171,10 +171,10 @@ function App({ settings }: { settings: SettingsState }) {
   const [protocolSelectHost, setProtocolSelectHost] = useState<Host | null>(null);
   // Navigation state for VaultView sections
   const [navigateToSection, setNavigateToSection] = useState<VaultSection | null>(null);
-  // Monotonic trigger for "open snippets section with add panel pre-opened".
-  // Incremented each time the sidebar "+" button is clicked. VaultView watches
-  // this and, when it changes, opens the snippet edit panel on mount.
-  const [openSnippetAddTrigger, setOpenSnippetAddTrigger] = useState(0);
+  // One-shot "pending add snippet" flag. Set true when the terminal-side
+  // ScriptsSidePanel "+" button is clicked. Cleared by SnippetsManager
+  // once it has consumed the request and opened its add panel.
+  const [pendingSnippetAdd, setPendingSnippetAdd] = useState(false);
   // Keyboard-interactive authentication queue (2FA/MFA) - queue-based to handle multiple concurrent sessions
   const [keyboardInteractiveQueue, setKeyboardInteractiveQueue] = useState<KeyboardInteractiveRequest[]>([]);
   // Passphrase request queue for encrypted SSH keys
@@ -583,16 +583,21 @@ function App({ settings }: { settings: SettingsState }) {
 
   // Listen for "add snippet" requests from the terminal-side ScriptsSidePanel.
   // Switches the active tab to the vault, navigates to the Snippets section,
-  // and bumps a monotonic trigger so SnippetsManager opens its add panel on mount.
+  // and raises a one-shot pending flag so SnippetsManager opens its add panel
+  // on mount. SnippetsManager clears the flag via the handled callback.
   useEffect(() => {
     const handler = () => {
       setActiveTabId('vault');
       setNavigateToSection('snippets');
-      setOpenSnippetAddTrigger((t) => t + 1);
+      setPendingSnippetAdd(true);
     };
     window.addEventListener('netcatty:snippets:add', handler);
     return () => window.removeEventListener('netcatty:snippets:add', handler);
   }, [setActiveTabId]);
+
+  const handlePendingSnippetAddHandled = useCallback(() => {
+    setPendingSnippetAdd(false);
+  }, []);
 
   // Show toast notification when update is available (only when auto-download is idle)
   useEffect(() => {
@@ -1464,7 +1469,8 @@ function App({ settings }: { settings: SettingsState }) {
             onOpenLogView={openLogView}
             navigateToSection={navigateToSection}
             onNavigateToSectionHandled={() => setNavigateToSection(null)}
-            openSnippetAddTrigger={openSnippetAddTrigger}
+            pendingSnippetAdd={pendingSnippetAdd}
+            onPendingSnippetAddHandled={handlePendingSnippetAddHandled}
           />
         </VaultViewContainer>
 

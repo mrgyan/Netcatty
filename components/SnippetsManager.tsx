@@ -38,10 +38,12 @@ interface SnippetsManagerProps {
   managedSources?: ManagedSource[];
   onSaveHost?: (host: Host) => void;
   onCreateGroup?: (groupPath: string) => void;
-  // Monotonic trigger — when this value changes (and is truthy), the
-  // manager opens its "add snippet" edit panel. Used so the terminal-side
-  // ScriptsSidePanel "+" button can jump straight into the add flow.
-  openAddTrigger?: number;
+  // One-shot pending flag: when true, the manager opens its "add snippet"
+  // panel and then invokes onPendingAddHandled to clear the flag. Used so
+  // the terminal-side ScriptsSidePanel "+" button can jump straight into
+  // the add flow even when SnippetsManager is mounting for the first time.
+  pendingAdd?: boolean;
+  onPendingAddHandled?: () => void;
 }
 
 type RightPanelMode = 'none' | 'edit-snippet' | 'history' | 'select-targets';
@@ -65,7 +67,8 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   managedSources = [],
   onSaveHost,
   onCreateGroup,
-  openAddTrigger,
+  pendingAdd,
+  onPendingAddHandled,
 }) => {
   const { t } = useI18n();
   // Panel state
@@ -298,16 +301,14 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     setRightPanelMode('edit-snippet');
   };
 
-  // When the parent bumps openAddTrigger (e.g. user clicked "+" on the
-  // terminal-side ScriptsSidePanel), jump straight into the add panel.
-  // We track the last-seen value in a ref so a plain re-mount with an
-  // unchanged trigger (e.g. user navigating back to Snippets later) does
-  // not unexpectedly re-open the add panel.
-  const lastSeenAddTriggerRef = useRef<number | undefined>(openAddTrigger);
+  // When the parent raises the pendingAdd flag (e.g. user clicked "+" on
+  // the terminal-side ScriptsSidePanel), open the add panel on mount /
+  // when the flag turns true, then clear the flag via the handled callback.
+  // Using a one-shot flag (vs. a monotonic trigger) avoids the edge case
+  // where the trigger is already non-zero on first mount and the naive
+  // "last-seen" comparison would skip the initial open.
   useEffect(() => {
-    if (openAddTrigger === undefined) return;
-    if (lastSeenAddTriggerRef.current === openAddTrigger) return;
-    lastSeenAddTriggerRef.current = openAddTrigger;
+    if (!pendingAdd) return;
     setEditingSnippet({
       label: '',
       command: '',
@@ -316,10 +317,11 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
     });
     setTargetSelection([]);
     setRightPanelMode('edit-snippet');
-    // Intentionally only depend on openAddTrigger: we want to react to the
-    // explicit trigger bump, not to every selectedPackage change.
+    onPendingAddHandled?.();
+    // selectedPackage is intentionally not a dep — we snapshot it when
+    // opening the panel, not on every selectedPackage change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openAddTrigger]);
+  }, [pendingAdd, onPendingAddHandled]);
 
   const handleSubmit = () => {
     if (editingSnippet.label && editingSnippet.command) {
