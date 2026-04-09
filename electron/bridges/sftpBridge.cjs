@@ -1407,7 +1407,8 @@ async function writeSftp(event, payload) {
   try {
     const stat = await client.stat(encodedPath);
     if (typeof stat.mode === "number") {
-      existingMode = stat.mode & 0o777;
+      // Mask with 0o7777 so special bits (setuid/setgid/sticky) are preserved too.
+      existingMode = stat.mode & 0o7777;
     }
   } catch (_err) {
     // File does not exist — treat as a new file and let the server apply defaults.
