@@ -378,25 +378,170 @@ function parseWindowOpenFeatures(features) {
   };
 }
 
-function createExternalOnlyWindowOpenHandler(shell) {
+/**
+ * Track open fallback browser windows so they are garbage-collected when the
+ * BrowserWindow is destroyed.
+ */
+const fallbackBrowserWindows = new Set();
+
+/**
+ * Open a URL in a minimal in-app BrowserWindow. Used as a fallback when the
+ * host OS cannot open the URL with the system browser (e.g. Tiny11 / Windows
+ * with no default browser configured — error 0x483). The window is
+ * intentionally stripped down:
+ *   - no preload script (remote content must NEVER touch contextBridge)
+ *   - sandboxed + contextIsolated renderer
+ *   - a separate persisted session partition so cookies and storage do not
+ *     leak into the main app session
+ */
+function openFallbackBrowser(url, options = {}) {
+  const { backgroundColor, appIcon } = options;
+  const electron = require("electron");
+  const { BrowserWindow, screen } = electron;
+
+  // Size and center relative to the main window when possible.
+  let bounds = { width: 1100, height: 740 };
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      const mainBounds = mainWindow.getBounds();
+      const display = screen.getDisplayMatching(mainBounds);
+      const area = display.workArea;
+      const w = Math.min(1200, Math.round(area.width * 0.85));
+      const h = Math.min(800, Math.round(area.height * 0.85));
+      bounds = {
+        width: w,
+        height: h,
+        x: Math.round(area.x + (area.width - w) / 2),
+        y: Math.round(area.y + (area.height - h) / 2),
+      };
+    }
+  } catch {
+    // Fall through to default bounds.
+  }
+
+  const win = new BrowserWindow({
+    ...bounds,
+    title: url,
+    backgroundColor: backgroundColor || THEME_COLORS[currentTheme]?.background,
+    icon: appIcon,
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      // Isolated session so users' browsing does not mix with main app state.
+      partition: "persist:netcatty-fallback-browser",
+    },
+  });
+
+  fallbackBrowserWindows.add(win);
+  win.on("closed", () => {
+    fallbackBrowserWindows.delete(win);
+  });
+
+  // Reflect the loaded page title in the window bar; fall back to the URL.
+  try {
+    win.webContents.on("page-title-updated", (_event, title) => {
+      try {
+        win.setTitle(title || url);
+      } catch {
+        // ignore
+      }
+    });
+  } catch {
+    // ignore
+  }
+
+  // Popups inside the fallback browser: open them in another fallback window
+  // rather than looping back through shell.openExternal (which is what
+  // failed in the first place).
+  try {
+    win.webContents.setWindowOpenHandler((details) => {
+      const targetUrl = details?.url;
+      if (targetUrl && typeof targetUrl === "string" && /^https?:/i.test(targetUrl)) {
+        openFallbackBrowser(targetUrl, { backgroundColor, appIcon });
+      }
+      return { action: "deny" };
+    });
+  } catch {
+    // ignore
+  }
+
+  // Minimal keyboard navigation: Alt+← / Alt+→ / Ctrl/Cmd+R.
+  try {
+    win.webContents.on("before-input-event", (_event, input) => {
+      if (input.type !== "keyDown") return;
+      try {
+        const history = win.webContents.navigationHistory;
+        if (input.alt && input.key === "ArrowLeft" && history?.canGoBack?.()) {
+          history.goBack();
+        } else if (input.alt && input.key === "ArrowRight" && history?.canGoForward?.()) {
+          history.goForward();
+        } else if ((input.control || input.meta) && typeof input.key === "string" && input.key.toLowerCase() === "r") {
+          win.webContents.reload();
+        }
+      } catch {
+        // ignore navigation errors
+      }
+    });
+  } catch {
+    // ignore
+  }
+
+  win.once("ready-to-show", () => {
+    try {
+      win.show();
+    } catch {
+      // ignore
+    }
+  });
+
+  // loadURL returns a Promise that rejects on load failure; explicitly catch
+  // so it never becomes an unhandledRejection.
+  win.loadURL(url).catch((err) => {
+    console.warn("[windowManager] fallback browser loadURL failed:", err?.message || err);
+  });
+
+  return win;
+}
+
+/**
+ * Try to open a URL with the OS default browser via shell.openExternal; if
+ * that fails (e.g. no default browser configured), fall back to the in-app
+ * BrowserWindow. Returns a structured result the caller can forward to the
+ * renderer.
+ */
+async function tryOpenExternalWithFallback(shell, url, options = {}) {
+  if (!url || typeof url !== "string" || !/^https?:/i.test(url)) {
+    return { success: false, error: "invalid-url" };
+  }
+  try {
+    await shell?.openExternal?.(url);
+    return { success: true };
+  } catch (err) {
+    const message = err?.message || String(err);
+    console.warn("[windowManager] shell.openExternal failed, using in-app fallback:", message);
+    try {
+      openFallbackBrowser(url, options);
+      return { success: true, fallback: "in-app-browser" };
+    } catch (fallbackErr) {
+      const fallbackMessage = fallbackErr?.message || String(fallbackErr);
+      console.warn("[windowManager] fallback browser failed:", fallbackMessage);
+      return { success: false, error: message };
+    }
+  }
+}
+
+function createExternalOnlyWindowOpenHandler(shell, options = {}) {
   return (details) => {
     const targetUrl = details?.url;
     if (targetUrl && typeof targetUrl === "string" && /^https?:/i.test(targetUrl)) {
-      // shell.openExternal returns a Promise that rejects if the OS cannot
-      // find a handler for the URL (e.g. Windows with no default browser
-      // configured, error 0x483). A bare try/catch does not catch async
-      // rejections — attach an explicit `.catch` so a failing openExternal
-      // never turns into an unhandledRejection that crashes the main process.
-      try {
-        const result = shell?.openExternal?.(targetUrl);
-        if (result && typeof result.catch === "function") {
-          result.catch((err) => {
-            console.warn("[windowManager] openExternal failed:", err?.message || err);
-          });
-        }
-      } catch (err) {
-        console.warn("[windowManager] openExternal threw:", err?.message || err);
-      }
+      // Run async fallback path without blocking the window-open decision.
+      tryOpenExternalWithFallback(shell, targetUrl, options).catch((err) => {
+        console.warn("[windowManager] tryOpenExternalWithFallback threw:", err?.message || err);
+      });
     }
     return { action: "deny" };
   };
@@ -436,18 +581,11 @@ function createAppWindowOpenHandler(shell, { backgroundColor, appIcon }) {
 
     // Default: open in system browser to reduce remote-content attack surface.
     if (!isAllowedInAppPopupUrl(targetUrl)) {
-      // Explicitly catch the Promise rejection — see note in
-      // createExternalOnlyWindowOpenHandler above.
-      try {
-        const result = shell?.openExternal?.(targetUrl);
-        if (result && typeof result.catch === "function") {
-          result.catch((err) => {
-            console.warn("[windowManager] openExternal failed:", err?.message || err);
-          });
-        }
-      } catch (err) {
-        console.warn("[windowManager] openExternal threw:", err?.message || err);
-      }
+      // Try system browser first, fall back to an in-app BrowserWindow when
+      // the OS has no handler for the URL (see tryOpenExternalWithFallback).
+      tryOpenExternalWithFallback(shell, targetUrl, { backgroundColor, appIcon }).catch((err) => {
+        console.warn("[windowManager] tryOpenExternalWithFallback threw:", err?.message || err);
+      });
       return { action: "deny" };
     }
 
@@ -1391,5 +1529,7 @@ module.exports = {
   getMainWindow,
   getSettingsWindow,
   setIsQuitting,
+  openFallbackBrowser,
+  tryOpenExternalWithFallback,
   THEME_COLORS,
 };
