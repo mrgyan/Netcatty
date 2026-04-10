@@ -654,12 +654,12 @@ const registerBridges = (win) => {
 
   // Open external URL in default browser. Falls back to an in-app
   // BrowserWindow when the OS has no handler for the URL (e.g. Windows with
-  // no default browser configured — error 0x483). Returns a structured
-  // result so the renderer only needs to surface a message in the rare case
-  // that both the system browser and the fallback window fail.
+  // no default browser configured — error 0x483). Rejects only in the rare
+  // case where both the system browser AND the fallback window fail, so
+  // existing callers that rely on rejection semantics still abort cleanly.
   ipcMain.handle("netcatty:openExternal", async (_event, url) => {
     const { shell } = electronModule;
-    return getWindowManager().tryOpenExternalWithFallback(shell, url);
+    await getWindowManager().tryOpenExternalWithFallback(shell, url);
   });
 
   // App information for About/Application screens

@@ -510,26 +510,29 @@ function openFallbackBrowser(url, options = {}) {
 /**
  * Try to open a URL with the OS default browser via shell.openExternal; if
  * that fails (e.g. no default browser configured), fall back to the in-app
- * BrowserWindow. Returns a structured result the caller can forward to the
- * renderer.
+ * BrowserWindow. Resolves on success (either via system browser or in-app
+ * fallback). Throws on total failure so callers that rely on rejection
+ * semantics (e.g. OAuth flows waiting on a Promise.race) still abort
+ * cleanly when no browser path is available.
  */
 async function tryOpenExternalWithFallback(shell, url, options = {}) {
   if (!url || typeof url !== "string" || !/^https?:/i.test(url)) {
-    return { success: false, error: "invalid-url" };
+    throw new Error("openExternal: invalid URL");
   }
   try {
     await shell?.openExternal?.(url);
-    return { success: true };
+    return;
   } catch (err) {
     const message = err?.message || String(err);
     console.warn("[windowManager] shell.openExternal failed, using in-app fallback:", message);
     try {
       openFallbackBrowser(url, options);
-      return { success: true, fallback: "in-app-browser" };
+      return;
     } catch (fallbackErr) {
       const fallbackMessage = fallbackErr?.message || String(fallbackErr);
       console.warn("[windowManager] fallback browser failed:", fallbackMessage);
-      return { success: false, error: message };
+      // Re-throw the original error so callers see the root cause.
+      throw err instanceof Error ? err : new Error(message);
     }
   }
 }

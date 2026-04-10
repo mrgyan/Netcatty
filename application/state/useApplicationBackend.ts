@@ -17,14 +17,10 @@ export const useApplicationBackend = () => {
   const openExternal = useCallback(async (url: string) => {
     const bridge = netcattyBridge.get();
     if (bridge?.openExternal) {
-      const result = await bridge.openExternal(url);
-      // The bridge returns a structured { success, error } result. Throw on
-      // failure so callers can present a user-facing message (the OS will
-      // return an error when there is no handler registered for the URL, e.g.
-      // Windows with no default browser configured).
-      if (result && result.success === false) {
-        throw new Error(result.error || "Failed to open URL");
-      }
+      // Bridge resolves on success (either via system browser or in-app
+      // fallback window) and rejects only when both paths fail. Let the
+      // rejection propagate so callers can present a user-facing message.
+      await bridge.openExternal(url);
       return;
     }
     // Fallback for non-Electron environments (tests, dev server, etc.).
