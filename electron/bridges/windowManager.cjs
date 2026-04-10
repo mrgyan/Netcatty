@@ -456,12 +456,20 @@ function openFallbackBrowser(url, options = {}) {
 
   // Popups inside the fallback browser: open them in another fallback window
   // rather than looping back through shell.openExternal (which is what
-  // failed in the first place).
+  // failed in the first place). These popups are fire-and-forget, so we
+  // explicitly catch the `loaded` rejection to avoid unhandledRejection.
   try {
     win.webContents.setWindowOpenHandler((details) => {
       const targetUrl = details?.url;
       if (targetUrl && typeof targetUrl === "string" && /^https?:/i.test(targetUrl)) {
-        openFallbackBrowser(targetUrl, { backgroundColor, appIcon });
+        try {
+          const popup = openFallbackBrowser(targetUrl, { backgroundColor, appIcon });
+          popup.loaded.catch((err) => {
+            console.warn("[windowManager] fallback popup loadURL failed:", err?.message || err);
+          });
+        } catch (popupErr) {
+          console.warn("[windowManager] fallback popup open failed:", popupErr?.message || popupErr);
+        }
       }
       return { action: "deny" };
     });
@@ -498,22 +506,23 @@ function openFallbackBrowser(url, options = {}) {
     }
   });
 
-  // loadURL returns a Promise that rejects on load failure; explicitly catch
-  // so it never becomes an unhandledRejection.
-  win.loadURL(url).catch((err) => {
-    console.warn("[windowManager] fallback browser loadURL failed:", err?.message || err);
-  });
+  // Return the window together with its initial-load Promise. Callers that
+  // care about whether the page actually loaded can await `loaded`; fire-
+  // and-forget callers must still catch the rejection themselves to avoid
+  // turning it into an unhandledRejection.
+  const loaded = win.loadURL(url);
 
-  return win;
+  return { window: win, loaded };
 }
 
 /**
  * Try to open a URL with the OS default browser via shell.openExternal; if
  * that fails (e.g. no default browser configured), fall back to the in-app
- * BrowserWindow. Resolves on success (either via system browser or in-app
- * fallback). Throws on total failure so callers that rely on rejection
- * semantics (e.g. OAuth flows waiting on a Promise.race) still abort
- * cleanly when no browser path is available.
+ * BrowserWindow. Resolves on success (either via system browser, or when
+ * the in-app fallback window finishes its initial load). Throws on total
+ * failure so callers that rely on rejection semantics (e.g. OAuth flows
+ * waiting on a Promise.race) still abort cleanly when no browser path is
+ * available.
  */
 async function tryOpenExternalWithFallback(shell, url, options = {}) {
   if (!url || typeof url !== "string" || !/^https?:/i.test(url)) {
@@ -525,13 +534,31 @@ async function tryOpenExternalWithFallback(shell, url, options = {}) {
   } catch (err) {
     const message = err?.message || String(err);
     console.warn("[windowManager] shell.openExternal failed, using in-app fallback:", message);
+
+    let fallback;
     try {
-      openFallbackBrowser(url, options);
+      fallback = openFallbackBrowser(url, options);
+    } catch (createErr) {
+      console.warn("[windowManager] fallback browser creation failed:", createErr?.message || createErr);
+      throw err instanceof Error ? err : new Error(message);
+    }
+
+    try {
+      // Wait for the fallback window's initial load. If the URL is
+      // unreachable or malformed, loadURL rejects — surface that as a real
+      // failure so callers (e.g. OAuth flows) can cancel early instead of
+      // waiting for a downstream timeout.
+      await fallback.loaded;
       return;
-    } catch (fallbackErr) {
-      const fallbackMessage = fallbackErr?.message || String(fallbackErr);
-      console.warn("[windowManager] fallback browser failed:", fallbackMessage);
-      // Re-throw the original error so callers see the root cause.
+    } catch (loadErr) {
+      console.warn("[windowManager] fallback browser loadURL failed:", loadErr?.message || loadErr);
+      try {
+        if (fallback.window && !fallback.window.isDestroyed()) {
+          fallback.window.close();
+        }
+      } catch {
+        // ignore cleanup errors
+      }
       throw err instanceof Error ? err : new Error(message);
     }
   }
