@@ -382,10 +382,20 @@ function createExternalOnlyWindowOpenHandler(shell) {
   return (details) => {
     const targetUrl = details?.url;
     if (targetUrl && typeof targetUrl === "string" && /^https?:/i.test(targetUrl)) {
+      // shell.openExternal returns a Promise that rejects if the OS cannot
+      // find a handler for the URL (e.g. Windows with no default browser
+      // configured, error 0x483). A bare try/catch does not catch async
+      // rejections — attach an explicit `.catch` so a failing openExternal
+      // never turns into an unhandledRejection that crashes the main process.
       try {
-        void shell?.openExternal?.(targetUrl);
-      } catch {
-        // ignore
+        const result = shell?.openExternal?.(targetUrl);
+        if (result && typeof result.catch === "function") {
+          result.catch((err) => {
+            console.warn("[windowManager] openExternal failed:", err?.message || err);
+          });
+        }
+      } catch (err) {
+        console.warn("[windowManager] openExternal threw:", err?.message || err);
       }
     }
     return { action: "deny" };
@@ -426,10 +436,17 @@ function createAppWindowOpenHandler(shell, { backgroundColor, appIcon }) {
 
     // Default: open in system browser to reduce remote-content attack surface.
     if (!isAllowedInAppPopupUrl(targetUrl)) {
+      // Explicitly catch the Promise rejection — see note in
+      // createExternalOnlyWindowOpenHandler above.
       try {
-        void shell?.openExternal?.(targetUrl);
-      } catch {
-        // ignore
+        const result = shell?.openExternal?.(targetUrl);
+        if (result && typeof result.catch === "function") {
+          result.catch((err) => {
+            console.warn("[windowManager] openExternal failed:", err?.message || err);
+          });
+        }
+      } catch (err) {
+        console.warn("[windowManager] openExternal threw:", err?.message || err);
       }
       return { action: "deny" };
     }

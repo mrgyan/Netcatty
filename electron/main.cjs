@@ -652,11 +652,21 @@ const registerBridges = (win) => {
     return true;
   });
 
-  // Open external URL in default browser
+  // Open external URL in default browser. Returns a structured result so the
+  // renderer can show a friendly message when the OS has no handler for the
+  // URL (e.g. Windows with no default browser configured — error 0x483).
   ipcMain.handle("netcatty:openExternal", async (_event, url) => {
     const { shell } = electronModule;
-    if (url && typeof url === 'string' && (url.startsWith('http://') || url.startsWith('https://'))) {
+    if (!url || typeof url !== 'string' || !(url.startsWith('http://') || url.startsWith('https://'))) {
+      return { success: false, error: 'invalid-url' };
+    }
+    try {
       await shell.openExternal(url);
+      return { success: true };
+    } catch (err) {
+      const message = err?.message || String(err);
+      console.warn('[main] shell.openExternal failed:', message);
+      return { success: false, error: message };
     }
   });
 
