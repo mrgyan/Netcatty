@@ -617,7 +617,27 @@ export const useAutoSync = (config: AutoSyncConfig) => {
         // persistent failure beyond that is almost certainly a
         // misconfiguration that needs user action rather than more
         // auto-retries.
-        if (attempt >= 4) return;
+        if (attempt >= 4) {
+          // Retries exhausted. Open the auto-sync gate anyway so the
+          // user's subsequent edits can push — otherwise the entire
+          // session stays silently non-syncing until a restart or a
+          // provider/unlock transition. The specific dangers we
+          // gate-closed to avoid (empty-vault clobber, partial-apply
+          // push) are now covered independently:
+          //   - `hasMeaningfulSyncData` in syncNow refuses to push an
+          //     empty vault on auto triggers.
+          //   - the apply-in-progress sentinel refuses to push a
+          //     half-applied vault.
+          //   - `checkProviderConflict` still runs before each upload
+          //     and throws on inspect failure, so a persistent
+          //     remote-unreachable state keeps per-push safety even
+          //     without a successful startup inspect.
+          // Manual sync from Settings has ALWAYS been allowed in this
+          // state; auto-sync matches that semantic rather than
+          // silently disabling itself for the rest of the session.
+          remoteCheckDoneRef.current = true;
+          return;
+        }
         const delayMs = Math.min(240_000, 30_000 * 2 ** attempt);
         attempt += 1;
         timerId = setTimeout(tick, delayMs);
