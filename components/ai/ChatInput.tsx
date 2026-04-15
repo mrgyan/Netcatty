@@ -456,7 +456,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               role="listbox"
               aria-label="Mention host"
               aria-activedescendant={hosts[activeMenuIndex] ? `at-mention-${hosts[activeMenuIndex].sessionId}` : undefined}
-              className="fixed z-[1000] overflow-hidden rounded-[20px] border border-border/60 bg-popover shadow-2xl"
+              className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
               style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 220, maxWidth: inputPanelPos.width }}
             >
               <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuHosts')}</div>
@@ -473,7 +473,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         aria-selected={isActive}
                         onMouseEnter={() => setActiveMenuIndex(idx)}
                         onClick={() => handleSelectAtMention(host)}
-                        className={`w-full rounded-[16px] px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                        className={`w-full rounded-md px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
                       >
                         <div className="flex items-center gap-2 text-[12px] text-foreground/90">
                           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${host.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
@@ -502,7 +502,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               role="listbox"
               aria-label="Insert user skill"
               aria-activedescendant={filteredUserSkills[activeMenuIndex] ? `slash-skill-${filteredUserSkills[activeMenuIndex].id}` : undefined}
-              className="fixed z-[1000] overflow-hidden rounded-[20px] border border-border/60 bg-popover shadow-2xl"
+              className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
               style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 220, maxWidth: inputPanelPos.width }}
             >
               <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuUserSkills')}</div>
@@ -519,7 +519,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         aria-selected={isActive}
                         onMouseEnter={() => setActiveMenuIndex(idx)}
                         onClick={() => insertUserSkillToken(skill)}
-                        className={`w-full rounded-[16px] px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                        className={`w-full rounded-md px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
                       >
                         <div className="flex items-center gap-2 text-[12px]">
                           <Package size={12} className="text-muted-foreground/55 shrink-0" />
