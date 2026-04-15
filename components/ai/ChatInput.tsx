@@ -457,13 +457,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
               aria-label="Mention host"
               aria-activedescendant={hosts[activeMenuIndex] ? `at-mention-${hosts[activeMenuIndex].sessionId}` : undefined}
               className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 220, maxWidth: inputPanelPos.width }}
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 200, maxWidth: inputPanelPos.width }}
             >
-              <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuHosts')}</div>
-              <ScrollArea className="max-h-[300px]">
-                <div className="px-2.5 pb-2.5">
+              <ScrollArea className="max-h-[280px]">
+                <div className="p-1">
                   {hosts.map((host, idx) => {
                     const isActive = idx === activeMenuIndex;
+                    const showHostnameLine = host.label
+                      && host.hostname !== host.label
+                      && !host.label.includes(host.hostname);
                     return (
                       <button
                         id={`at-mention-${host.sessionId}`}
@@ -473,14 +475,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         aria-selected={isActive}
                         onMouseEnter={() => setActiveMenuIndex(idx)}
                         onClick={() => handleSelectAtMention(host)}
-                        className={`w-full rounded-md px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                        className={`w-full rounded-md px-2 py-1 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
                       >
                         <div className="flex items-center gap-2 text-[12px] text-foreground/90">
                           <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${host.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
                           <span className="truncate">{host.label || host.hostname}</span>
                         </div>
-                        {host.label && host.hostname !== host.label ? (
-                          <div className="mt-0.5 pl-3.5 text-[10px] text-muted-foreground/60 truncate">
+                        {showHostnameLine ? (
+                          <div className="pl-3.5 text-[10px] text-muted-foreground/60 truncate">
                             {host.hostname}
                           </div>
                         ) : null}
@@ -503,11 +505,10 @@ const ChatInput: React.FC<ChatInputProps> = ({
               aria-label="Insert user skill"
               aria-activedescendant={filteredUserSkills[activeMenuIndex] ? `slash-skill-${filteredUserSkills[activeMenuIndex].id}` : undefined}
               className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 220, maxWidth: inputPanelPos.width }}
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 200, maxWidth: inputPanelPos.width }}
             >
-              <div className="px-4 pt-3 pb-1.5 text-[10px] font-medium text-muted-foreground/62 tracking-wide">{t('ai.chat.menuUserSkills')}</div>
-              <ScrollArea className="max-h-[300px]">
-                <div className="px-2.5 pb-2.5">
+              <ScrollArea className="max-h-[280px]">
+                <div className="p-1">
                   {filteredUserSkills.map((skill, idx) => {
                     const isActive = idx === activeMenuIndex;
                     return (
@@ -519,14 +520,14 @@ const ChatInput: React.FC<ChatInputProps> = ({
                         aria-selected={isActive}
                         onMouseEnter={() => setActiveMenuIndex(idx)}
                         onClick={() => insertUserSkillToken(skill)}
-                        className={`w-full rounded-md px-3 py-1.5 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
+                        className={`w-full rounded-md px-2 py-1 text-left transition-colors cursor-pointer ${isActive ? 'bg-muted/40' : 'hover:bg-muted/30'}`}
                       >
                         <div className="flex items-center gap-2 text-[12px]">
                           <Package size={12} className="text-muted-foreground/55 shrink-0" />
                           <span className="text-foreground/90">/{skill.slug}</span>
                         </div>
                         {skill.description ? (
-                          <div className="mt-0.5 pl-5 text-[10px] leading-4.5 text-muted-foreground/62 line-clamp-2">
+                          <div className="pl-5 text-[10px] leading-4.5 text-muted-foreground/62 line-clamp-2">
                             {skill.description}
                           </div>
                         ) : null}
