@@ -229,13 +229,25 @@ const ChatInput: React.FC<ChatInputProps> = ({
     closeAllMenus();
   }, [closeAllMenus, onAddUserSkill, onChange, removeSlashQueryFromInput, slashRange]);
 
-  // Reset active highlight when a menu opens or its visible items change
+  // Reset active highlight when a menu opens or when the *identity* of the
+  // visible items changes. Watching only `.length` misses cases where the
+  // filter produces a different set with the same count (e.g. user types
+  // another character into the slash query) — Enter would then commit an
+  // unexpected item. Derive a stable key from the visible ids instead.
+  const atMentionKey = useMemo(
+    () => hosts.map((h) => h.sessionId).join('|'),
+    [hosts],
+  );
+  const slashSkillKey = useMemo(
+    () => filteredUserSkills.map((s) => s.id).join('|'),
+    [filteredUserSkills],
+  );
   useEffect(() => {
     if (showAtMention) setActiveMenuIndex(0);
-  }, [showAtMention, hosts.length]);
+  }, [showAtMention, atMentionKey]);
   useEffect(() => {
     if (showSlashSkillPicker) setActiveMenuIndex(0);
-  }, [showSlashSkillPicker, filteredUserSkills.length]);
+  }, [showSlashSkillPicker, slashSkillKey]);
 
   const handleTextareaKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.nativeEvent.isComposing) return;
@@ -457,7 +469,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               aria-label="Mention host"
               aria-activedescendant={hosts[activeMenuIndex] ? `at-mention-${hosts[activeMenuIndex].sessionId}` : undefined}
               className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 200, maxWidth: inputPanelPos.width }}
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: Math.min(200, inputPanelPos.width), maxWidth: inputPanelPos.width }}
             >
               <ScrollArea className="max-h-[280px]">
                 <div className="p-1">
@@ -505,7 +517,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
               aria-label="Insert user skill"
               aria-activedescendant={filteredUserSkills[activeMenuIndex] ? `slash-skill-${filteredUserSkills[activeMenuIndex].id}` : undefined}
               className="fixed z-[1000] overflow-hidden rounded-lg border border-border/50 bg-popover shadow-lg"
-              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: 200, maxWidth: inputPanelPos.width }}
+              style={{ left: inputPanelPos.left, bottom: inputPanelPos.bottom, width: 'auto', minWidth: Math.min(200, inputPanelPos.width), maxWidth: inputPanelPos.width }}
             >
               <ScrollArea className="max-h-[280px]">
                 <div className="p-1">
