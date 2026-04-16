@@ -1258,6 +1258,21 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     }
   }, [activeWorkspace?.focusedSessionId, activeSession?.id, terminalBackend]);
 
+  const refocusTerminalSession = useCallback((sessionId?: string | null) => {
+    if (!sessionId) return;
+
+    const focusTarget = () => {
+      const pane = document.querySelector(`[data-session-id="${sessionId}"]`);
+      const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
+      textarea?.focus();
+    };
+
+    requestAnimationFrame(() => {
+      focusTarget();
+      setTimeout(focusTarget, 50);
+    });
+  }, []);
+
   // Close the entire side panel for the current tab
   const handleCloseSidePanel = useCallback(() => {
     if (!activeTabId) return;
@@ -1399,21 +1414,6 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
     const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
     textarea?.focus();
   }, [activeWorkspace?.focusedSessionId, activeSession?.id, terminalBackend]);
-
-  const refocusTerminalSession = useCallback((sessionId?: string | null) => {
-    if (!sessionId) return;
-
-    const focusTarget = () => {
-      const pane = document.querySelector(`[data-session-id="${sessionId}"]`);
-      const textarea = pane?.querySelector('textarea.xterm-helper-textarea') as HTMLTextAreaElement | null;
-      textarea?.focus();
-    };
-
-    requestAnimationFrame(() => {
-      focusTarget();
-      setTimeout(focusTarget, 50);
-    });
-  }, []);
 
   // Resolve theme change handler for the focused session
   const focusedHost = useMemo((): Host | null => {
