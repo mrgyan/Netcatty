@@ -33,6 +33,7 @@ const {
   serializeStreamChunk,
   toUnpackedAsarPath,
 } = require("./ai/shellUtils.cjs");
+const { createFilteredSseForwarder } = require("./aiStreamSse.cjs");
 
 const {
   codexLoginSessions,
@@ -689,11 +690,18 @@ function streamRequest(url, options, event, requestId, skipTLS) {
         // Resolve with success status — data will flow via stream events
         resolve({ statusCode, statusText });
 
+        const sseForwarder = createFilteredSseForwarder((data) => {
+          safeSend(event.sender, "netcatty:ai:stream:data", {
+            requestId,
+            data,
+          });
+        });
         let buffer = "";
         const MAX_BUFFER_SIZE = 10 * 1024 * 1024; // 10MB safety limit
 
         res.on("data", (chunk) => {
-          buffer += chunk.toString();
+          const text = chunk.toString();
+          buffer += text;
           // Guard against unbounded buffer growth
           if (buffer.length > MAX_BUFFER_SIZE) {
             safeSend(event.sender, "netcatty:ai:stream:error", {
@@ -704,31 +712,12 @@ function streamRequest(url, options, event, requestId, skipTLS) {
             activeStreams.delete(requestId);
             return;
           }
-          const lines = buffer.split("\n");
-          buffer = lines.pop() || "";
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed) continue;
-
-            // Forward raw SSE data line to renderer
-            if (trimmed.startsWith("data: ")) {
-              safeSend(event.sender, "netcatty:ai:stream:data", {
-                requestId,
-                data: trimmed.slice(6),
-              });
-            }
-          }
+          sseForwarder.processChunk(text);
+          buffer = "";
         });
 
         res.on("end", () => {
-          // Flush any remaining buffer
-          if (buffer.trim().startsWith("data: ")) {
-            safeSend(event.sender, "netcatty:ai:stream:data", {
-              requestId,
-              data: buffer.trim().slice(6),
-            });
-          }
+          sseForwarder.flush();
           safeSend(event.sender, "netcatty:ai:stream:end", { requestId });
           activeStreams.delete(requestId);
         });
