@@ -668,38 +668,54 @@ export const useSessionState = () => {
   const copySession = useCallback((sessionId: string, options?: {
     localShellType?: TerminalSession['shellType'];
   }) => {
-    const session = sessions.find(s => s.id === sessionId);
-    if (!session) return;
-    const nextShellType = session.protocol === 'local'
-      ? options?.localShellType
-      : session.shellType;
+    // Pre-allocate the new id so we can reference it from both state updaters
+    // without depending on an un-committed read of `sessions`. The id is stable
+    // even if React invokes the updater twice (StrictMode) because it is
+    // captured in closure rather than re-generated inside.
+    const newSessionId = crypto.randomUUID();
 
-    // Create a new session with the same connection info
-    const newSession: TerminalSession = {
-      id: crypto.randomUUID(),
-      hostId: session.hostId,
-      hostLabel: session.hostLabel,
-      hostname: session.hostname,
-      username: session.username,
-      status: 'connecting',
-      protocol: session.protocol,
-      port: session.port,
-      moshEnabled: session.moshEnabled,
-      shellType: nextShellType,
-      charset: session.charset,
-      serialConfig: session.serialConfig,
-      localShell: session.localShell,
-      localShellArgs: session.localShellArgs,
-      localShellName: session.localShellName,
-      localShellIcon: session.localShellIcon,
-    };
+    setSessions(prevSessions => {
+      const session = prevSessions.find(s => s.id === sessionId);
+      if (!session) return prevSessions;
+      const nextShellType = session.protocol === 'local'
+        ? options?.localShellType
+        : session.shellType;
 
-    setSessions(prev => [...prev, newSession]);
-    setActiveTabId(newSession.id);
+      const newSession: TerminalSession = {
+        id: newSessionId,
+        hostId: session.hostId,
+        hostLabel: session.hostLabel,
+        hostname: session.hostname,
+        username: session.username,
+        status: 'connecting',
+        protocol: session.protocol,
+        port: session.port,
+        moshEnabled: session.moshEnabled,
+        shellType: nextShellType,
+        charset: session.charset,
+        serialConfig: session.serialConfig,
+        localShell: session.localShell,
+        localShellArgs: session.localShellArgs,
+        localShellName: session.localShellName,
+        localShellIcon: session.localShellIcon,
+      };
+
+      return [...prevSessions, newSession];
+    });
+    setActiveTabId(newSessionId);
 
     // Insert the new session id right after the source in tab order,
     // so duplicated tabs appear next to the original instead of at the far right.
+    // If the source is already present in tabOrder, splice by that index directly;
+    // otherwise fall back to reconstituting the effective order from the derived
+    // tab collections (same pattern as reorderTabs).
     setTabOrder(prevTabOrder => {
+      const directIdx = prevTabOrder.indexOf(sessionId);
+      if (directIdx !== -1) {
+        const next = [...prevTabOrder];
+        next.splice(directIdx + 1, 0, newSessionId);
+        return next;
+      }
       const allTabIds = [
         ...orphanSessions.map(s => s.id),
         ...workspaces.map(w => w.id),
@@ -711,12 +727,12 @@ export const useSessionState = () => {
       const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
       const currentOrder = [...orderedIds, ...newIds];
       const sourceIdx = currentOrder.indexOf(sessionId);
-      if (sourceIdx === -1) return [...currentOrder, newSession.id];
+      if (sourceIdx === -1) return [...prevTabOrder, newSessionId];
       const next = [...currentOrder];
-      next.splice(sourceIdx + 1, 0, newSession.id);
+      next.splice(sourceIdx + 1, 0, newSessionId);
       return next;
     });
-  }, [sessions, orphanSessions, workspaces, logViews, setActiveTabId]);
+  }, [orphanSessions, workspaces, logViews, setActiveTabId]);
 
   // Toggle broadcast mode for a workspace
   const toggleBroadcast = useCallback((workspaceId: string) => {
