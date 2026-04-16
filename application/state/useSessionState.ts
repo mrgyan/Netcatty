@@ -668,37 +668,55 @@ export const useSessionState = () => {
   const copySession = useCallback((sessionId: string, options?: {
     localShellType?: TerminalSession['shellType'];
   }) => {
-    setSessions(prevSessions => {
-      const session = prevSessions.find(s => s.id === sessionId);
-      if (!session) return prevSessions;
-      const nextShellType = session.protocol === 'local'
-        ? options?.localShellType
-        : session.shellType;
+    const session = sessions.find(s => s.id === sessionId);
+    if (!session) return;
+    const nextShellType = session.protocol === 'local'
+      ? options?.localShellType
+      : session.shellType;
 
-      // Create a new session with the same connection info
-      const newSession: TerminalSession = {
-        id: crypto.randomUUID(),
-        hostId: session.hostId,
-        hostLabel: session.hostLabel,
-        hostname: session.hostname,
-        username: session.username,
-        status: 'connecting',
-        protocol: session.protocol,
-        port: session.port,
-        moshEnabled: session.moshEnabled,
-        shellType: nextShellType,
-        charset: session.charset,
-        serialConfig: session.serialConfig,
-        localShell: session.localShell,
-        localShellArgs: session.localShellArgs,
-        localShellName: session.localShellName,
-        localShellIcon: session.localShellIcon,
-      };
+    // Create a new session with the same connection info
+    const newSession: TerminalSession = {
+      id: crypto.randomUUID(),
+      hostId: session.hostId,
+      hostLabel: session.hostLabel,
+      hostname: session.hostname,
+      username: session.username,
+      status: 'connecting',
+      protocol: session.protocol,
+      port: session.port,
+      moshEnabled: session.moshEnabled,
+      shellType: nextShellType,
+      charset: session.charset,
+      serialConfig: session.serialConfig,
+      localShell: session.localShell,
+      localShellArgs: session.localShellArgs,
+      localShellName: session.localShellName,
+      localShellIcon: session.localShellIcon,
+    };
 
-      setActiveTabId(newSession.id);
-      return [...prevSessions, newSession];
+    setSessions(prev => [...prev, newSession]);
+    setActiveTabId(newSession.id);
+
+    // Insert the new session id right after the source in tab order,
+    // so duplicated tabs appear next to the original instead of at the far right.
+    setTabOrder(prevTabOrder => {
+      const allTabIds = [
+        ...orphanSessions.map(s => s.id),
+        ...workspaces.map(w => w.id),
+        ...logViews.map(lv => lv.id),
+      ];
+      const allTabIdSet = new Set(allTabIds);
+      const orderedIds = prevTabOrder.filter(id => allTabIdSet.has(id));
+      const orderedIdSet = new Set(orderedIds);
+      const newIds = allTabIds.filter(id => !orderedIdSet.has(id));
+      const currentOrder = [...orderedIds, ...newIds];
+      const sourceIdx = currentOrder.indexOf(sessionId);
+      if (sourceIdx === -1) return [...currentOrder, newSession.id];
+      const next = [...currentOrder];
+      next.splice(sourceIdx + 1, 0, newSession.id);
+      return next;
     });
-  }, [setActiveTabId]);
+  }, [sessions, orphanSessions, workspaces, logViews, setActiveTabId]);
 
   // Toggle broadcast mode for a workspace
   const toggleBroadcast = useCallback((workspaceId: string) => {
