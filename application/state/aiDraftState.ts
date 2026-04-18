@@ -150,7 +150,16 @@ export function selectDraftForAgentSwitch(
   agentId: string,
   startFresh: boolean,
 ): AIDraft {
-  if (startFresh) {
+  const hasPendingDraftContent = Boolean(
+    currentDraft
+    && (
+      currentDraft.text.length > 0
+      || currentDraft.attachments.length > 0
+      || currentDraft.selectedUserSkillSlugs.length > 0
+    ),
+  );
+
+  if (startFresh && !hasPendingDraftContent) {
     return createEmptyDraft(agentId);
   }
 
