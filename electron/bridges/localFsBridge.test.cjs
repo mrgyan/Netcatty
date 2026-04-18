@@ -65,3 +65,55 @@ test("listWindowsHiddenBasenames returns an empty set on non-Windows without spa
   assert.ok(result instanceof Set);
   assert.equal(result.size, 0);
 });
+
+test("listWindowsHiddenBasenames invokes attrib.exe with /d so hidden directories aren't omitted", async () => {
+  // Regression: without `/d`, `attrib <dir>\*` treats the wildcard as
+  // file-centric and hidden directories (node_modules, .git, …) never
+  // reach parseAttribOutput — the SFTP browser then shows them as
+  // not-hidden, a behavior regression from the per-file implementation.
+  const Module = require("node:module");
+  const realChildProcess = require("node:child_process");
+  const originalLoad = Module._load;
+  const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+
+  let capturedArgs = null;
+  let capturedExecutable = null;
+
+  Module._load = function patchedLoad(request, parent, isMain) {
+    if (request === "node:child_process") {
+      return {
+        ...realChildProcess,
+        execFile: (executable, args, _options, cb) => {
+          capturedExecutable = executable;
+          capturedArgs = args;
+          cb(null, { stdout: "", stderr: "" });
+        },
+      };
+    }
+    return originalLoad.call(this, request, parent, isMain);
+  };
+
+  Object.defineProperty(process, "platform", {
+    value: "win32",
+    writable: true,
+    configurable: true,
+  });
+
+  const bridgePath = require.resolve("./localFsBridge.cjs");
+  delete require.cache[bridgePath];
+
+  try {
+    const { listWindowsHiddenBasenames: fn } = require("./localFsBridge.cjs");
+    await fn("C:\\fixture");
+  } finally {
+    Module._load = originalLoad;
+    Object.defineProperty(process, "platform", originalPlatform);
+    delete require.cache[bridgePath];
+  }
+
+  assert.equal(capturedExecutable, "attrib.exe");
+  assert.ok(
+    Array.isArray(capturedArgs) && capturedArgs.includes("/d"),
+    `expected /d in attrib args so hidden directories are included, got ${JSON.stringify(capturedArgs)}`,
+  );
+});

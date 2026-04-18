@@ -61,7 +61,12 @@ async function listWindowsHiddenBasenames(dirPath) {
   if (process.platform !== "win32") return new Set();
   try {
     const pattern = path.join(dirPath, "*");
-    const { stdout } = await execFileAsync("attrib.exe", [pattern], {
+    // `/d` is required so attrib.exe also reports directory entries —
+    // without it the wildcard is file-centric and hidden folders would
+    // be silently omitted from the set, causing the SFTP browser to
+    // show them as not-hidden (a regression from the per-file path
+    // that passed each entry's full path directly).
+    const { stdout } = await execFileAsync("attrib.exe", [pattern, "/d"], {
       maxBuffer: 64 * 1024 * 1024,
       windowsHide: true,
     });
