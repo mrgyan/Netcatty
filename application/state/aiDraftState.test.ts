@@ -13,6 +13,7 @@ import {
   pruneTerminalScopeState,
   pruneTerminalTransientState,
   resolvePanelView,
+  selectDraftForAgentSwitch,
   setDraftView,
   setSessionView,
   updateDraftForScope,
@@ -170,6 +171,36 @@ test("ensureDraftForScopeState returns the original ref when the scope already e
   );
 
   assert.equal(next, draftsByScope);
+});
+
+test("selectDraftForAgentSwitch resets to an empty draft when leaving a populated chat session", () => {
+  const currentDraft = {
+    ...createEmptyDraft("agent-alpha"),
+    text: "keep me only if I was already drafting",
+    attachments: [{ id: "file-1", filename: "note.txt", dataUrl: "", base64Data: "", mediaType: "text/plain" }],
+    selectedUserSkillSlugs: ["skill-a"],
+  };
+
+  const next = selectDraftForAgentSwitch(currentDraft, "agent-beta", true);
+
+  assert.equal(next.agentId, "agent-beta");
+  assert.equal(next.text, "");
+  assert.deepEqual(next.attachments, []);
+  assert.deepEqual(next.selectedUserSkillSlugs, []);
+});
+
+test("selectDraftForAgentSwitch preserves an existing draft while only changing agent", () => {
+  const currentDraft = {
+    ...createEmptyDraft("agent-alpha"),
+    text: "unfinished prompt",
+    selectedUserSkillSlugs: ["skill-a"],
+  };
+
+  const next = selectDraftForAgentSwitch(currentDraft, "agent-beta", false);
+
+  assert.equal(next.agentId, "agent-beta");
+  assert.equal(next.text, "unfinished prompt");
+  assert.deepEqual(next.selectedUserSkillSlugs, ["skill-a"]);
 });
 
 test("draft mutation version increments on every mutation for the same scope", () => {

@@ -145,6 +145,22 @@ export function ensureDraftForScopeState(
   };
 }
 
+export function selectDraftForAgentSwitch(
+  currentDraft: AIDraft | null | undefined,
+  agentId: string,
+  startFresh: boolean,
+): AIDraft {
+  if (startFresh) {
+    return createEmptyDraft(agentId);
+  }
+
+  const baseDraft = currentDraft ?? createEmptyDraft(agentId);
+  return {
+    ...baseDraft,
+    agentId,
+  };
+}
+
 export function clearScopeDraftState(
   draftsByScope: DraftsByScope,
   panelViewByScope: PanelViewByScope,
