@@ -34,6 +34,26 @@ test("parseAttribOutput ignores the trailing [DIR] marker on some Windows versio
   assert.deepEqual([...hidden].sort(), [".git", "node_modules"].sort());
 });
 
+test("parseAttribOutput preserves filenames that legitimately end with bracketed suffixes", () => {
+  // Regression: a prior version stripped ANY trailing bracketed suffix
+  // via /\s+\[[^\]]+\]\s*$/, truncating "Notes [old]" to "Notes".
+  // Only the literal [DIR] marker that attrib emits with /d is a parser
+  // artifact; user-facing filenames with brackets must survive intact so
+  // hiddenSet.has(entry.name) still matches the actual readdir entry.
+  const stdout = [
+    "     H       C:\\data\\Notes [old]",
+    "     H       C:\\data\\Draft [v2].md",
+    "     H       C:\\data\\archived [2024]",
+    "     H       C:\\data\\node_modules                        [DIR]",
+  ].join("\r\n");
+
+  const hidden = parseAttribOutput(stdout);
+  assert.deepEqual(
+    [...hidden].sort(),
+    ["Draft [v2].md", "Notes [old]", "archived [2024]", "node_modules"].sort(),
+  );
+});
+
 test("parseAttribOutput handles UNC paths", () => {
   const stdout = [
     "     H       \\\\fileserver\\share\\secret.cfg",

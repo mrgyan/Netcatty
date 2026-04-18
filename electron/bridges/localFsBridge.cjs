@@ -36,8 +36,12 @@ function parseAttribOutput(stdout) {
     const attrPart = line.substring(0, pathStart).toUpperCase();
     if (!attrPart.includes("H")) continue;
     const fullPath = line.substring(pathStart).trim();
-    // Some Windows versions append a trailing "[DIR]" marker; strip it.
-    const cleaned = fullPath.replace(/\s+\[[^\]]+\]\s*$/, "");
+    // Some Windows versions append a trailing literal "[DIR]" marker
+    // when attrib is invoked with /d. Strip only that exact marker —
+    // not any arbitrary bracketed suffix — so legitimate filenames
+    // ending in brackets ("Notes [old]", "Draft [v2].md") survive
+    // intact and still get matched by hiddenSet.has(entry.name).
+    const cleaned = fullPath.replace(/\s+\[DIR\]\s*$/, "");
     // Always use the win32 basename here — attrib output uses backslash
     // separators, and the parser must work under CI on non-Windows hosts.
     const basename = path.win32.basename(cleaned);
