@@ -6,27 +6,69 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const os = require("node:os");
-const { exec } = require("node:child_process");
+const { execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
- * Check if a file is hidden on Windows using the attrib command
- * Returns true if the file has the hidden attribute set
- * Uses async exec to avoid blocking the main process
+ * Parse the output of `attrib.exe <dir>\*` into a set of basenames whose
+ * `H` (hidden) flag is set. Exposed separately so the parser can be
+ * unit-tested without spawning a real subprocess.
+ *
+ * Example attrib output (one entry per line):
+ *   A            C:\path\file1.txt
+ *        H      C:\path\file2.txt
+ *   A    H  R   C:\path\file3.txt
+ *        H      C:\path\hidden_dir                [DIR]
  */
-async function isWindowsHiddenFile(filePath) {
-  if (process.platform !== "win32") return false;
+function parseAttribOutput(stdout) {
+  const hidden = new Set();
+  for (const line of String(stdout).split(/\r?\n/)) {
+    if (!line) continue;
+    // Flags occupy the leading columns. Locate the path by the first
+    // drive letter ("C:\") or UNC prefix ("\\server\share"). The `\\\\`
+    // alternative has no leading anchor because attrib output has the
+    // path inside the line, not at column 0 (leading whitespace holds
+    // the attribute flags).
+    const pathStart = line.search(/[A-Za-z]:[\\/]|\\\\/);
+    if (pathStart < 0) continue;
+    const attrPart = line.substring(0, pathStart).toUpperCase();
+    if (!attrPart.includes("H")) continue;
+    const fullPath = line.substring(pathStart).trim();
+    // Some Windows versions append a trailing "[DIR]" marker; strip it.
+    const cleaned = fullPath.replace(/\s+\[[^\]]+\]\s*$/, "");
+    // Always use the win32 basename here — attrib output uses backslash
+    // separators, and the parser must work under CI on non-Windows hosts.
+    const basename = path.win32.basename(cleaned);
+    if (basename) hidden.add(basename);
+  }
+  return hidden;
+}
+
+/**
+ * Batch-list hidden filenames in a Windows directory.
+ *
+ * Previously we called `attrib` once per entry inside the concurrency
+ * worker loop. On a directory with ~800 files, that spawns ~800 subprocesses
+ * and takes ~30 s (see #766). One subprocess call with a wildcard returns
+ * the hidden attribute for every entry at once, so we replace the per-file
+ * check with a single upfront pass and a Set lookup in the worker.
+ *
+ * Returns the set of hidden basenames (empty on non-Windows or on failure).
+ */
+async function listWindowsHiddenBasenames(dirPath) {
+  if (process.platform !== "win32") return new Set();
   try {
-    const { stdout } = await execAsync(`attrib "${filePath}"`);
-    // attrib output format: "     H  R  filename" where H = hidden, R = read-only, etc.
-    // The attributes appear in the first ~10 characters before the path
-    const attrPart = stdout.substring(0, stdout.indexOf(filePath)).toUpperCase();
-    return attrPart.includes("H");
+    const pattern = path.join(dirPath, "*");
+    const { stdout } = await execFileAsync("attrib.exe", [pattern], {
+      maxBuffer: 64 * 1024 * 1024,
+      windowsHide: true,
+    });
+    return parseAttribOutput(stdout);
   } catch (err) {
-    console.warn(`Could not check hidden attribute for ${filePath}:`, err.message);
-    return false;
+    console.warn(`[localFsBridge] Batch attrib failed for ${dirPath}:`, err.message);
+    return new Set();
   }
 }
 
@@ -37,8 +79,16 @@ async function isWindowsHiddenFile(filePath) {
  */
 async function listLocalDir(event, payload) {
   const dirPath = payload.path;
-  const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
   const isWindows = process.platform === "win32";
+
+  // Read directory entries and the Windows hidden-attribute set in
+  // parallel. The hidden lookup is a single subprocess that covers every
+  // entry in the directory; per-file attrib calls were the ~30 s hotspot
+  // that #766 reported on an 800-file directory.
+  const [entries, hiddenSet] = await Promise.all([
+    fs.promises.readdir(dirPath, { withFileTypes: true }),
+    isWindows ? listWindowsHiddenBasenames(dirPath) : Promise.resolve(new Set()),
+  ]);
 
   // Stat entries in parallel with a small concurrency limit.
   // Serial stats can be very slow on Windows for large dirs.
@@ -70,8 +120,8 @@ async function listLocalDir(event, payload) {
           type = "file";
         }
 
-        // Check for Windows hidden attribute
-        const hidden = isWindows ? await isWindowsHiddenFile(fullPath) : false;
+        // Windows hidden attribute: resolved from the batched lookup.
+        const hidden = isWindows ? hiddenSet.has(entry.name) : false;
 
         result[i] = {
           name: entry.name,
@@ -90,7 +140,7 @@ async function listLocalDir(event, payload) {
             const lstat = await fs.promises.lstat(fullPath);
             if (lstat.isSymbolicLink()) {
               // Broken symlink
-              const hidden = isWindows ? await isWindowsHiddenFile(fullPath) : false;
+              const hidden = isWindows ? hiddenSet.has(brokenEntry.name) : false;
               result[i] = {
                 name: brokenEntry.name,
                 type: "symlink",
@@ -269,4 +319,6 @@ module.exports = {
   getHomeDir,
   getSystemInfo,
   readKnownHosts,
+  parseAttribOutput,
+  listWindowsHiddenBasenames,
 };
