@@ -1033,7 +1033,7 @@ function hasUsableWindow() {
   try {
     const windowManager = getWindowManager();
     return [windowManager.getMainWindow?.(), windowManager.getSettingsWindow?.()]
-      .some((win) => windowManager.isWindowUsable?.(win));
+      .some((win) => windowManager.isWindowUsable?.(win, { requireVisible: true }));
   } catch {
     return false;
   }

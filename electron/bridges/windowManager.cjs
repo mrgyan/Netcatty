@@ -812,9 +812,18 @@ function resolveRendererReady(wcId) {
   }
 }
 
-function isWindowUsable(win) {
+function isWindowUsable(win, options = {}) {
+  const requireVisible = options.requireVisible === true;
   if (!win || typeof win.isDestroyed !== "function" || win.isDestroyed()) {
     return false;
+  }
+  if (requireVisible) {
+    if (typeof win.isVisible !== "function") return false;
+    try {
+      if (!win.isVisible()) return false;
+    } catch {
+      return false;
+    }
   }
   const contents = win.webContents;
   if (!contents || typeof contents.isDestroyed !== "function" || contents.isDestroyed()) {

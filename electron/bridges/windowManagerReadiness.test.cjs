@@ -8,6 +8,9 @@ function createWindowStub({ destroyed = false, webContents } = {}) {
     isDestroyed() {
       return destroyed;
     },
+    isVisible() {
+      return true;
+    },
     webContents,
   };
 }
@@ -40,4 +43,25 @@ test("isWindowUsable returns true for a healthy live window", () => {
   });
 
   assert.equal(isWindowUsable(win), true);
+});
+
+test("isWindowUsable can require a visible window", () => {
+  const hiddenWin = {
+    ...createWindowStub({
+      webContents: {
+        isDestroyed() {
+          return false;
+        },
+        isCrashed() {
+          return false;
+        },
+      },
+    }),
+    isVisible() {
+      return false;
+    },
+  };
+
+  assert.equal(isWindowUsable(hiddenWin, { requireVisible: true }), false);
+  assert.equal(isWindowUsable(hiddenWin, { requireVisible: false }), true);
 });
