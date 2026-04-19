@@ -20,61 +20,30 @@ if (process.env.ELECTRON_RUN_AS_NODE) {
 
 // Load crash log bridge early so process-level error handlers can use it
 const crashLogBridge = require("./bridges/crashLogBridge.cjs");
-const { classifyProcessError } = require("./bridges/processErrorGuards.cjs");
-let runtimeErrorProtectionArmed = false;
-
-// Handle uncaught exceptions — log all, only re-throw truly fatal ones
-process.on('uncaughtException', (err) => {
-  const decision = classifyProcessError(err, {
-    runtimeStarted: runtimeErrorProtectionArmed,
-    origin: 'uncaughtException',
-  });
-
-  if (decision.action === 'ignore') {
-    console.warn('Ignored process error:', decision.reason, err?.code || err?.message || err);
-    return;
-  }
-
-  if (decision.action === 'suppress') {
-    if (!err.__fromUnhandledRejection) {
-      try { crashLogBridge.captureError('uncaughtException', err); } catch {}
+const {
+  createProcessErrorController,
+  installProcessErrorHandlers,
+} = require("./bridges/processErrorGuards.cjs");
+const processErrorController = createProcessErrorController({
+  captureError(source, err) {
+    try { crashLogBridge.captureError(source, err); } catch {}
+  },
+  onFatalError(err, context) {
+    if (context?.origin === 'unhandledRejection') {
+      console.error('Unhandled rejection:', context.reason);
+    } else {
+      console.error('Uncaught exception:', err);
     }
-    console.error(`Suppressed uncaught exception (${decision.reason}):`, err);
-    return;
-  }
-
-  // Skip logging if already captured by unhandledRejection handler
-  if (!err.__fromUnhandledRejection) {
-    try { crashLogBridge.captureError('uncaughtException', err); } catch {}
-  }
-  console.error('Uncaught exception:', err);
-  throw err;
+    throw err;
+  },
+  logError(...args) {
+    console.error(...args);
+  },
+  logWarn(...args) {
+    console.warn(...args);
+  },
 });
-
-process.on('unhandledRejection', (reason) => {
-  const decision = classifyProcessError(reason, {
-    runtimeStarted: runtimeErrorProtectionArmed,
-    origin: 'unhandledRejection',
-  });
-
-  if (decision.action === 'ignore') {
-    return;
-  }
-
-  if (decision.action === 'suppress') {
-    try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
-    console.error(`Suppressed unhandled rejection (${decision.reason}):`, reason);
-    return;
-  }
-
-  try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
-  console.error('Unhandled rejection:', reason);
-  // Re-throw to preserve fatal semantics. Mark so uncaughtException handler
-  // can skip duplicate logging.
-  const err = reason instanceof Error ? reason : new Error(String(reason));
-  err.__fromUnhandledRejection = true;
-  throw err;
-});
+installProcessErrorHandlers(process, processErrorController);
 
 // Load Electron
 let electronModule;
@@ -995,6 +964,59 @@ async function createWindow() {
   return win;
 }
 
+function waitForWindowToShow(win) {
+  return new Promise((resolve, reject) => {
+    if (!win || win.isDestroyed?.()) {
+      reject(new Error("Main window was destroyed before first show."));
+      return;
+    }
+    if (win.isVisible?.()) {
+      resolve();
+      return;
+    }
+
+    const cleanup = () => {
+      try { win.removeListener("show", handleShow); } catch {}
+      try { win.removeListener("closed", handleClosed); } catch {}
+    };
+
+    const handleShow = () => {
+      cleanup();
+      resolve();
+    };
+    const handleClosed = () => {
+      cleanup();
+      reject(new Error("Main window closed before first show."));
+    };
+
+    win.once("show", handleShow);
+    win.once("closed", handleClosed);
+  });
+}
+
+async function createAndShowMainWindow() {
+  processErrorController.beginMainWindowStartup();
+  try {
+    const win = await createWindow();
+    await waitForWindowToShow(win);
+    processErrorController.completeMainWindowStartup({ windowShown: true });
+    return win;
+  } catch (err) {
+    processErrorController.completeMainWindowStartup({ windowShown: false });
+    throw err;
+  }
+}
+
+function hasUsableWindow() {
+  try {
+    const windowManager = getWindowManager();
+    return [windowManager.getMainWindow?.(), windowManager.getSettingsWindow?.()]
+      .some((win) => win && !win.isDestroyed?.());
+  } catch {
+    return false;
+  }
+}
+
 function showStartupError(err) {
   const title = "Netcatty";
   const code = err && typeof err === "object" ? err.code : null;
@@ -1020,9 +1042,12 @@ if (!gotLock) {
   app.on("second-instance", () => {
     if (!focusMainWindow()) {
       // Window is missing or crashed — try to recreate it
-      void createWindow().catch((err) => {
+      void createAndShowMainWindow().catch((err) => {
         console.error("[Main] Failed to recreate window on second-instance:", err);
         showStartupError(err);
+        if (!hasUsableWindow()) {
+          try { app.quit(); } catch {}
+        }
       });
     }
   });
@@ -1040,9 +1065,17 @@ if (!gotLock) {
       }
     }
 
-    // Build and set application menu
-    const menu = getWindowManager().buildAppMenu(Menu, app, isMac);
-    Menu.setApplicationMenu(menu);
+    // Build and set application menu. A broken menu should not take down
+    // the entire app — fall back to no custom menu and continue startup.
+    try {
+      const menu = getWindowManager().buildAppMenu(Menu, app, isMac);
+      Menu.setApplicationMenu(menu);
+    } catch (err) {
+      console.error("[Main] Failed to build application menu:", err);
+      try {
+        Menu.setApplicationMenu(null);
+      } catch {}
+    }
 
     app.on("browser-window-created", (_event, win) => {
       try {
@@ -1062,8 +1095,7 @@ if (!gotLock) {
     });
 
     // Create the main window
-    void createWindow().then(() => {
-      runtimeErrorProtectionArmed = true;
+    void createAndShowMainWindow().then(() => {
       // Trigger auto-update check 5 s after window creation.
       // startAutoCheck() is a no-op on unsupported platforms (Linux deb/rpm/snap).
       getAutoUpdateBridge().startAutoCheck(5000);
@@ -1113,9 +1145,12 @@ if (!gotLock) {
 
       if (focusMainWindow()) return;
       // Main window doesn't exist — create it even if other windows (e.g. settings) are open
-      void createWindow().catch((err) => {
+      void createAndShowMainWindow().catch((err) => {
         console.error("[Main] Failed to create window on activate:", err);
         showStartupError(err);
+        if (!hasUsableWindow()) {
+          try { app.quit(); } catch {}
+        }
       });
     });
   });

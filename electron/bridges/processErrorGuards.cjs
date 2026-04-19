@@ -75,8 +75,119 @@ function classifyProcessError(err, options = {}) {
   };
 }
 
+function createProcessErrorController(options = {}) {
+  const captureError = typeof options.captureError === "function" ? options.captureError : () => {};
+  const onFatalError = typeof options.onFatalError === "function"
+    ? options.onFatalError
+    : (err) => { throw err; };
+  const logError = typeof options.logError === "function" ? options.logError : (...args) => console.error(...args);
+  const logWarn = typeof options.logWarn === "function" ? options.logWarn : (...args) => console.warn(...args);
+
+  let hasShownMainWindow = false;
+  let pendingMainWindowStartupCount = 0;
+
+  const isRuntimeProtectionActive = () => (
+    hasShownMainWindow && pendingMainWindowStartupCount === 0
+  );
+
+  const beginMainWindowStartup = () => {
+    pendingMainWindowStartupCount += 1;
+  };
+
+  const completeMainWindowStartup = ({ windowShown = false } = {}) => {
+    if (pendingMainWindowStartupCount > 0) {
+      pendingMainWindowStartupCount -= 1;
+    }
+    if (windowShown) {
+      hasShownMainWindow = true;
+    }
+  };
+
+  const handleUncaughtException = (err) => {
+    const decision = classifyProcessError(err, {
+      runtimeStarted: isRuntimeProtectionActive(),
+      origin: "uncaughtException",
+    });
+
+    if (decision.action === "ignore") {
+      logWarn("Ignored process error:", decision.reason, err?.code || err?.message || err);
+      return;
+    }
+
+    if (decision.action === "suppress") {
+      if (!err?.__fromUnhandledRejection) {
+        captureError("uncaughtException", err);
+      }
+      logError(`Suppressed uncaught exception (${decision.reason}):`, err);
+      return;
+    }
+
+    if (!err?.__fromUnhandledRejection) {
+      captureError("uncaughtException", err);
+    }
+    onFatalError(err, {
+      origin: "uncaughtException",
+      decision,
+      reason: err,
+    });
+  };
+
+  const handleUnhandledRejection = (reason) => {
+    const decision = classifyProcessError(reason, {
+      runtimeStarted: isRuntimeProtectionActive(),
+      origin: "unhandledRejection",
+    });
+
+    if (decision.action === "ignore") {
+      return;
+    }
+
+    if (decision.action === "suppress") {
+      captureError("unhandledRejection", reason);
+      logError(`Suppressed unhandled rejection (${decision.reason}):`, reason);
+      return;
+    }
+
+    captureError("unhandledRejection", reason);
+    const err = reason instanceof Error ? reason : new Error(String(reason));
+    err.__fromUnhandledRejection = true;
+    onFatalError(err, {
+      origin: "unhandledRejection",
+      decision,
+      reason,
+    });
+  };
+
+  return {
+    beginMainWindowStartup,
+    completeMainWindowStartup,
+    handleUncaughtException,
+    handleUnhandledRejection,
+    isRuntimeProtectionActive,
+  };
+}
+
+function installProcessErrorHandlers(processObject, controller) {
+  if (!processObject?.on || !processObject?.removeListener) {
+    throw new Error("A process-like EventEmitter is required");
+  }
+  if (!controller?.handleUncaughtException || !controller?.handleUnhandledRejection) {
+    throw new Error("A process error controller is required");
+  }
+
+  processObject.on("uncaughtException", controller.handleUncaughtException);
+  processObject.on("unhandledRejection", controller.handleUnhandledRejection);
+
+  return () => {
+    processObject.removeListener("uncaughtException", controller.handleUncaughtException);
+    processObject.removeListener("unhandledRejection", controller.handleUnhandledRejection);
+  };
+}
+
 module.exports = {
   classifyProcessError,
+  createProcessErrorController,
+  installProcessErrorHandlers,
   isBenignStreamError,
   isNonFatalNetworkError,
 };
