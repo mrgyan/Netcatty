@@ -29,6 +29,7 @@ const processErrorController = createProcessErrorController({
     try { crashLogBridge.captureError(source, err); } catch {}
   },
   onFatalError(err, context) {
+    uninstallProcessErrorHandlers();
     if (context?.origin === 'unhandledRejection') {
       console.error('Unhandled rejection:', context.reason);
     } else {
@@ -43,7 +44,7 @@ const processErrorController = createProcessErrorController({
     console.warn(...args);
   },
 });
-installProcessErrorHandlers(process, processErrorController);
+let uninstallProcessErrorHandlers = installProcessErrorHandlers(process, processErrorController);
 
 // Load Electron
 let electronModule;
@@ -994,17 +995,32 @@ function waitForWindowToShow(win) {
   });
 }
 
+let mainWindowStartupPromise = null;
+
 async function createAndShowMainWindow() {
-  processErrorController.beginMainWindowStartup();
-  try {
-    const win = await createWindow();
-    await waitForWindowToShow(win);
-    processErrorController.completeMainWindowStartup({ windowShown: true });
-    return win;
-  } catch (err) {
-    processErrorController.completeMainWindowStartup({ windowShown: false });
-    throw err;
-  }
+  if (mainWindowStartupPromise) return mainWindowStartupPromise;
+
+  mainWindowStartupPromise = (async () => {
+    processErrorController.beginMainWindowStartup();
+    try {
+      const win = await createWindow();
+      await Promise.all([
+        waitForWindowToShow(win),
+        getWindowManager().waitForRendererReady(win, {
+          timeoutMs: isDev ? 30000 : 15000,
+        }),
+      ]);
+      processErrorController.completeMainWindowStartup({ windowShown: true });
+      return win;
+    } catch (err) {
+      processErrorController.completeMainWindowStartup({ windowShown: false });
+      throw err;
+    } finally {
+      mainWindowStartupPromise = null;
+    }
+  })();
+
+  return mainWindowStartupPromise;
 }
 
 function hasUsableWindow() {

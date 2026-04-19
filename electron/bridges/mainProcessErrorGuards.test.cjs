@@ -26,6 +26,16 @@ test("treats other Chromium net::ERR_* failures as non-fatal network errors", ()
   );
 });
 
+test("treats Node socket error codes as non-fatal network errors", () => {
+  const err = new Error("socket reset");
+  err.code = "ECONNRESET";
+  assert.equal(isNonFatalNetworkError(err), true);
+
+  const dnsErr = new Error("dns failed");
+  dnsErr.code = "ENOTFOUND";
+  assert.equal(isNonFatalNetworkError(dnsErr), true);
+});
+
 test("keeps non-network errors fatal", () => {
   assert.equal(
     isNonFatalNetworkError(new Error("Something else broke")),
@@ -115,10 +125,12 @@ test("installed handlers suppress runtime failures but fatal startup failures", 
   controller.completeMainWindowStartup({ windowShown: true });
 
   fakeProcess.emit("uncaughtException", new Error("runtime boom"));
+  fakeProcess.emit("unhandledRejection", new Error("runtime rejection"));
   assert.deepEqual(fatals, ["startup boom"]);
   assert.deepEqual(captured, [
     ["uncaughtException", "startup boom"],
     ["uncaughtException", "runtime boom"],
+    ["unhandledRejection", "runtime rejection"],
   ]);
   assert.equal(errors.some((line) => line.includes("runtime error after startup")), true);
   assert.equal(warnings.length, 0);
@@ -172,37 +184,25 @@ test("benign stream teardown errors are ignored by the installed handlers", () =
 });
 
 test("controller suppresses wrapped network errors from err.cause", () => {
-  const controller = createProcessErrorController({
-    captureError() {},
-    onFatalError() {
-      throw new Error("should not be fatal");
-    },
-    logError() {},
-    logWarn() {},
-  });
-  controller.beginMainWindowStartup();
-  controller.completeMainWindowStartup({ windowShown: true });
-
   const err = new Error("request failed");
   err.cause = new Error("net::ERR_NETWORK_CHANGED");
 
-  assert.doesNotThrow(() => controller.handleUnhandledRejection(err));
+  const result = classifyProcessError(err, {
+    runtimeStarted: false,
+  });
+
+  assert.equal(isNonFatalNetworkError(err), true);
+  assert.equal(result.action, "suppress");
 });
 
 test("controller suppresses ssh-style errors with a level property", () => {
-  const controller = createProcessErrorController({
-    captureError() {},
-    onFatalError() {
-      throw new Error("should not be fatal");
-    },
-    logError() {},
-    logWarn() {},
-  });
-  controller.beginMainWindowStartup();
-  controller.completeMainWindowStartup({ windowShown: true });
-
   const err = new Error("connection lost before handshake");
   err.level = "client-socket";
 
-  assert.doesNotThrow(() => controller.handleUncaughtException(err));
+  const result = classifyProcessError(err, {
+    runtimeStarted: false,
+  });
+
+  assert.equal(isNonFatalNetworkError(err), true);
+  assert.equal(result.action, "suppress");
 });
