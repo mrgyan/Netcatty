@@ -20,53 +20,29 @@ if (process.env.ELECTRON_RUN_AS_NODE) {
 
 // Load crash log bridge early so process-level error handlers can use it
 const crashLogBridge = require("./bridges/crashLogBridge.cjs");
-
-// SSH / network errors that must never crash the process.
-// ssh2 can emit multiple 'error' events per connection (e.g. ECONNRESET followed
-// by "Connection lost before handshake"). If a listener is consumed after the first
-// event, the second becomes an uncaught exception. These are non-fatal for the app.
-function isNonFatalNetworkError(err) {
-  if (!err) return false;
-  // Any error with an ssh2 `level` property is a connection/auth-level error,
-  // never a reason to kill the entire multi-session app.
-  if (err.level) return true;
-  const code = err.code;
-  // Common TCP/DNS/routing errors that can surface from Node.js sockets
-  // without an ssh2 `level` (e.g. proxy sockets, raw net.connect calls).
-  switch (code) {
-    case 'ECONNRESET':
-    case 'ECONNREFUSED':
-    case 'ECONNABORTED':
-    case 'ETIMEDOUT':
-    case 'ENOTFOUND':
-    case 'EHOSTUNREACH':
-    case 'EHOSTDOWN':
-    case 'ENETUNREACH':
-    case 'ENETDOWN':
-    case 'EADDRNOTAVAIL':
-    case 'EPROTO':
-    case 'EPERM':
-      return true;
-    default:
-      return false;
-  }
-}
+const { classifyProcessError } = require("./bridges/processErrorGuards.cjs");
+let runtimeErrorProtectionArmed = false;
 
 // Handle uncaught exceptions — log all, only re-throw truly fatal ones
 process.on('uncaughtException', (err) => {
-  // Skip benign stream teardown errors — don't pollute crash logs with false positives
-  if (err.code === 'EPIPE' || err.code === 'ERR_STREAM_DESTROYED') {
-    console.warn('Ignored stream error:', err.code);
+  const decision = classifyProcessError(err, {
+    runtimeStarted: runtimeErrorProtectionArmed,
+    origin: 'uncaughtException',
+  });
+
+  if (decision.action === 'ignore') {
+    console.warn('Ignored process error:', decision.reason, err?.code || err?.message || err);
     return;
   }
-  // Non-fatal SSH/network errors: log but do NOT crash the process
-  if (isNonFatalNetworkError(err)) {
+
+  if (decision.action === 'suppress') {
     if (!err.__fromUnhandledRejection) {
       try { crashLogBridge.captureError('uncaughtException', err); } catch {}
     }
-    console.warn('Non-fatal uncaught exception (suppressed):', err.message);
+    console.error(`Suppressed uncaught exception (${decision.reason}):`, err);
     return;
   }
+
   // Skip logging if already captured by unhandledRejection handler
   if (!err.__fromUnhandledRejection) {
     try { crashLogBridge.captureError('uncaughtException', err); } catch {}
@@ -76,15 +52,21 @@ process.on('uncaughtException', (err) => {
 });
 
 process.on('unhandledRejection', (reason) => {
-  // Skip benign stream teardown errors
-  const code = reason?.code;
-  if (code === 'EPIPE' || code === 'ERR_STREAM_DESTROYED') return;
-  // Non-fatal SSH/network errors: log but do NOT re-throw
-  if (isNonFatalNetworkError(reason)) {
-    try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
-    console.warn('Non-fatal unhandled rejection (suppressed):', reason?.message || reason);
+  const decision = classifyProcessError(reason, {
+    runtimeStarted: runtimeErrorProtectionArmed,
+    origin: 'unhandledRejection',
+  });
+
+  if (decision.action === 'ignore') {
     return;
   }
+
+  if (decision.action === 'suppress') {
+    try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
+    console.error(`Suppressed unhandled rejection (${decision.reason}):`, reason);
+    return;
+  }
+
   try { crashLogBridge.captureError('unhandledRejection', reason); } catch {}
   console.error('Unhandled rejection:', reason);
   // Re-throw to preserve fatal semantics. Mark so uncaughtException handler
@@ -1081,6 +1063,7 @@ if (!gotLock) {
 
     // Create the main window
     void createWindow().then(() => {
+      runtimeErrorProtectionArmed = true;
       // Trigger auto-update check 5 s after window creation.
       // startAutoCheck() is a no-op on unsupported platforms (Linux deb/rpm/snap).
       getAutoUpdateBridge().startAutoCheck(5000);
