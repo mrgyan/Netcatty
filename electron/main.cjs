@@ -979,6 +979,7 @@ function waitForWindowToShow(win) {
     const cleanup = () => {
       try { win.removeListener("show", handleShow); } catch {}
       try { win.removeListener("closed", handleClosed); } catch {}
+      try { win.webContents?.removeListener?.("render-process-gone", handleGone); } catch {}
     };
 
     const handleShow = () => {
@@ -989,9 +990,14 @@ function waitForWindowToShow(win) {
       cleanup();
       reject(new Error("Main window closed before first show."));
     };
+    const handleGone = (_event, details) => {
+      cleanup();
+      reject(new Error(`Renderer process exited before first show: ${details?.reason || "unknown"}`));
+    };
 
     win.once("show", handleShow);
     win.once("closed", handleClosed);
+    win.webContents?.once?.("render-process-gone", handleGone);
   });
 }
 
@@ -1004,12 +1010,12 @@ async function createAndShowMainWindow() {
     processErrorController.beginMainWindowStartup();
     try {
       const win = await createWindow();
-      await Promise.all([
-        waitForWindowToShow(win),
-        getWindowManager().waitForRendererReady(win, {
-          timeoutMs: isDev ? 30000 : 15000,
-        }),
-      ]);
+      await waitForWindowToShow(win);
+      void getWindowManager().waitForRendererReady(win, {
+        timeoutMs: isDev ? 30000 : 15000,
+      }).catch((err) => {
+        console.warn("[Main] Renderer ready signal was late or missing after first show:", err?.message || err);
+      });
       processErrorController.completeMainWindowStartup({ windowShown: true });
       return win;
     } catch (err) {
@@ -1027,7 +1033,7 @@ function hasUsableWindow() {
   try {
     const windowManager = getWindowManager();
     return [windowManager.getMainWindow?.(), windowManager.getSettingsWindow?.()]
-      .some((win) => win && !win.isDestroyed?.());
+      .some((win) => windowManager.isWindowUsable?.(win));
   } catch {
     return false;
   }

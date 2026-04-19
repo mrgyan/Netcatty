@@ -94,10 +94,61 @@ test("controller becomes strict again while recreating a missing main window", (
   assert.equal(controller.isRuntimeProtectionActive(), true);
 });
 
-test("installed handlers suppress runtime failures but fatal startup failures", () => {
+test("startup-period errors stay fatal while recreating the main window", () => {
+  const fakeProcess = new EventEmitter();
+  const fatals = [];
+  const controller = createProcessErrorController({
+    captureError() {},
+    onFatalError(err) {
+      fatals.push(err.message);
+      throw err;
+    },
+    logError() {},
+    logWarn() {},
+  });
+
+  installProcessErrorHandlers(fakeProcess, controller);
+  controller.completeMainWindowStartup({ windowShown: true });
+  controller.beginMainWindowStartup();
+
+  assert.throws(() => {
+    fakeProcess.emit("uncaughtException", new Error("recreate boom"));
+  }, /recreate boom/);
+  assert.deepEqual(fatals, ["recreate boom"]);
+});
+
+test("fatal startup failures uninstall listeners and keep throwing", () => {
   const fakeProcess = new EventEmitter();
   const captured = [];
   const fatals = [];
+  let uninstall = null;
+  const controller = createProcessErrorController({
+    captureError(source, err) {
+      captured.push([source, err.message]);
+    },
+    onFatalError(err) {
+      fatals.push(err.message);
+      uninstall?.();
+      throw err;
+    },
+    logError() {},
+    logWarn() {},
+  });
+
+  uninstall = installProcessErrorHandlers(fakeProcess, controller);
+
+  assert.throws(() => {
+    fakeProcess.emit("uncaughtException", new Error("startup boom"));
+  }, /startup boom/);
+  assert.deepEqual(fatals, ["startup boom"]);
+  assert.deepEqual(captured, [["uncaughtException", "startup boom"]]);
+  assert.equal(fakeProcess.listenerCount("uncaughtException"), 0);
+  assert.equal(fakeProcess.listenerCount("unhandledRejection"), 0);
+});
+
+test("installed handlers suppress runtime failures after startup", () => {
+  const fakeProcess = new EventEmitter();
+  const captured = [];
   const errors = [];
   const warnings = [];
   const controller = createProcessErrorController({
@@ -105,7 +156,7 @@ test("installed handlers suppress runtime failures but fatal startup failures", 
       captured.push([source, err.message]);
     },
     onFatalError(err) {
-      fatals.push(err.message);
+      throw err;
     },
     logError(...args) {
       errors.push(args.map(String).join(" "));
@@ -117,18 +168,12 @@ test("installed handlers suppress runtime failures but fatal startup failures", 
 
   installProcessErrorHandlers(fakeProcess, controller);
 
-  fakeProcess.emit("uncaughtException", new Error("startup boom"));
-  assert.deepEqual(fatals, ["startup boom"]);
-  assert.deepEqual(captured, [["uncaughtException", "startup boom"]]);
-
   controller.beginMainWindowStartup();
   controller.completeMainWindowStartup({ windowShown: true });
 
   fakeProcess.emit("uncaughtException", new Error("runtime boom"));
   fakeProcess.emit("unhandledRejection", new Error("runtime rejection"));
-  assert.deepEqual(fatals, ["startup boom"]);
   assert.deepEqual(captured, [
-    ["uncaughtException", "startup boom"],
     ["uncaughtException", "runtime boom"],
     ["unhandledRejection", "runtime rejection"],
   ]);

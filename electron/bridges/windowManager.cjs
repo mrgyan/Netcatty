@@ -38,6 +38,7 @@ let isQuitting = false;
 const rendererReadyCallbacksByWebContentsId = new Map();
 const rendererReadySeenByWebContentsId = new Set();
 const rendererReadyWaitersByWebContentsId = new Map();
+const unhealthyWebContentsIds = new Set();
 const DEBUG_WINDOWS = process.env.NETCATTY_DEBUG_WINDOWS === "1";
 const OAUTH_DEFAULT_WIDTH = 600;
 const OAUTH_DEFAULT_HEIGHT = 700;
@@ -795,6 +796,7 @@ function setupDeferredShow(win, { timeoutMs = 3000, waitForRendererReady = true 
 
 function resolveRendererReady(wcId) {
   if (!wcId) return;
+  unhealthyWebContentsIds.delete(wcId);
   rendererReadySeenByWebContentsId.add(wcId);
   const cb = rendererReadyCallbacksByWebContentsId.get(wcId);
   if (cb) cb();
@@ -808,6 +810,34 @@ function resolveRendererReady(wcId) {
       // ignore waiter errors
     }
   }
+}
+
+function isWindowUsable(win) {
+  if (!win || typeof win.isDestroyed !== "function" || win.isDestroyed()) {
+    return false;
+  }
+  const contents = win.webContents;
+  if (!contents || typeof contents.isDestroyed !== "function" || contents.isDestroyed()) {
+    return false;
+  }
+  const wcId = (() => {
+    try {
+      return contents.id;
+    } catch {
+      return null;
+    }
+  })();
+  if (wcId && unhealthyWebContentsIds.has(wcId)) {
+    return false;
+  }
+  if (typeof contents.isCrashed === "function") {
+    try {
+      if (contents.isCrashed()) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }
 
 function waitForRendererReady(win, { timeoutMs = 15000 } = {}) {
@@ -955,12 +985,27 @@ async function createWindow(electronModule, options) {
 
   // Clear reference when the main window is destroyed
   win.on('closed', () => {
+    try {
+      if (win?.webContents?.id) {
+        unhealthyWebContentsIds.delete(win.webContents.id);
+        rendererReadySeenByWebContentsId.delete(win.webContents.id);
+      }
+    } catch {
+      // ignore
+    }
     if (mainWindow === win) mainWindow = null;
   });
 
   // Log renderer crashes for diagnostics (skip normal clean exits)
   win.webContents.on("render-process-gone", (_event, details) => {
     if (details?.reason === "clean-exit") return;
+    try {
+      if (win.webContents?.id) {
+        unhealthyWebContentsIds.add(win.webContents.id);
+      }
+    } catch {
+      // ignore
+    }
     try {
       const crashLogBridge = require("./crashLogBridge.cjs");
       crashLogBridge.captureError("render-process-gone", new Error(
@@ -1691,6 +1736,7 @@ module.exports = {
   buildAppMenu,
   getMainWindow,
   getSettingsWindow,
+  isWindowUsable,
   waitForRendererReady,
   setIsQuitting,
   openFallbackBrowser,
