@@ -16,6 +16,9 @@ import { useI18n } from "../application/i18n/I18nProvider";
 import { useSftpState } from "../application/state/useSftpState";
 import { useSftpBackend } from "../application/state/useSftpBackend";
 import { useSftpFileAssociations } from "../application/state/useSftpFileAssociations";
+import {
+  resolveSidePanelInitialLocation,
+} from "../application/state/sftpSidePanelInitialLocation";
 import { getParentPath } from "../application/state/sftp/utils";
 import { buildCacheKey } from "../application/state/sftp/sharedRemoteHostCache";
 import { logger } from "../lib/logger";
@@ -133,6 +136,14 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   const panelRootRef = useRef<HTMLDivElement>(null);
   const dialogActionScopeIdRef = useRef(`sftp-side-panel:${crypto.randomUUID()}`);
   const [hasPaneFocus, setHasPaneFocus] = useState(false);
+  const activeHostId = activeHost?.id ?? null;
+  const initialLocationHostId = initialLocation?.hostId ?? null;
+  const initialLocationPath = initialLocation?.path ?? null;
+  const initialLocationRequestKey = (
+    initialLocationHostId && initialLocationPath
+      ? `${initialLocationHostId}:${initialLocationPath}`
+      : null
+  );
 
   useSftpKeyboardShortcuts({
     keyBindings,
@@ -263,17 +274,28 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   // Store the Host object used for the current connection so the header
   // can show session-time overrides even during deferred host switches.
   const connectedHostObjRef = useRef<Host | null>(null);
-  const lastAppliedInitialLocationKeyRef = useRef<string | null>(null);
+  const pendingInitialLocationRequestKeyRef = useRef<string | null>(null);
+  const lastSeenInitialLocationRequestKeyRef = useRef<string | null>(null);
   const handledPendingUploadIdRef = useRef<string | null>(null);
   // Maps tab IDs to the connectionKey used to create them, so we can
   // correctly identify tabs when the same host ID has different overrides.
   const tabConnectionKeyMapRef = useRef<Map<string, string>>(new Map());
 
-  // NOTE: We intentionally do NOT reset lastAppliedInitialLocationKeyRef on
-  // visibility changes. When the user switches terminal tabs, the panel
-  // toggles isVisible but should preserve its navigation state (the user may
-  // have navigated away from initialLocation). When the panel is truly
-  // closed, the component unmounts and all refs are naturally reset.
+  // Treat initialLocation as a one-shot request from the terminal, not as an
+  // ongoing source of truth. We also intentionally do NOT clear these refs on
+  // visibility changes because hidden mounted panels should keep their current
+  // directory instead of replaying the old terminal CWD when shown again.
+  useEffect(() => {
+    if (
+      !initialLocationRequestKey
+      || lastSeenInitialLocationRequestKeyRef.current === initialLocationRequestKey
+    ) {
+      return;
+    }
+
+    lastSeenInitialLocationRequestKeyRef.current = initialLocationRequestKey;
+    pendingInitialLocationRequestKeyRef.current = initialLocationRequestKey;
+  }, [initialLocationRequestKey]);
 
   // Navigate SFTP to the terminal's current working directory
   const handleGoToTerminalCwd = useCallback(async () => {
@@ -409,30 +431,34 @@ const SftpSidePanelInner: React.FC<SftpSidePanelProps> = ({
   }, [sftp.leftPane.connection, sftp.leftPane.connection?.status, sftp.activeFileWatchCountRef]);
 
   useEffect(() => {
-    if (!activeHost || !initialLocation) return;
-    if (initialLocation.hostId !== activeHost.id || !initialLocation.path) return;
+    if (!activeHostId || !initialLocationHostId || !initialLocationPath) return;
+    const decision = resolveSidePanelInitialLocation({
+      pendingRequestKey: pendingInitialLocationRequestKeyRef.current,
+      initialLocation: { hostId: initialLocationHostId, path: initialLocationPath },
+      activeHostId,
+      connection: sftpRef.current.leftPane.connection
+        ? {
+            hostId: sftpRef.current.leftPane.connection.hostId,
+            isLocal: sftpRef.current.leftPane.connection.isLocal,
+            status: sftpRef.current.leftPane.connection.status,
+            currentPath: sftpRef.current.leftPane.connection.currentPath,
+          }
+        : null,
+    });
 
-    const activePane = sftpRef.current.leftPane;
-    const connection = activePane.connection;
-    if (!connection || connection.isLocal || connection.hostId !== activeHost.id) return;
-    if (connection.status !== "connected") return;
+    if (decision.kind === "none") return;
 
-    // Include full endpoint key so that same-hostId sessions with
-    // different overrides each get their initial location applied.
-    const locationKey = `${connectedKeyRef.current}:${initialLocation.path}`;
-    if (lastAppliedInitialLocationKeyRef.current === locationKey) return;
-
-    if (connection.currentPath === initialLocation.path) {
-      lastAppliedInitialLocationKeyRef.current = locationKey;
-      return;
+    pendingInitialLocationRequestKeyRef.current = null;
+    if (decision.kind === "navigate") {
+      sftpRef.current.navigateTo("left", decision.path);
     }
-
-    lastAppliedInitialLocationKeyRef.current = locationKey;
-    sftpRef.current.navigateTo("left", initialLocation.path);
   }, [
-    activeHost,
-    initialLocation,
-    sftp.leftPane,
+    activeHostId,
+    initialLocationHostId,
+    initialLocationPath,
+    sftp.leftPane.connection?.id,
+    sftp.leftPane.connection?.status,
+    sftp.leftPane.connection?.currentPath,
   ]);
 
   useEffect(() => {
