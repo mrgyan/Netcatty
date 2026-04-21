@@ -4,13 +4,6 @@ interface AppLogoProps {
   className?: string;
 }
 
-/**
- * Inline brand logo. Background follows the theme accent via
- * `hsl(var(--primary))`; the cat mark is shrunk to ~68% of the
- * frame for breathing room, and the dark toe/claw detail paths from the
- * source illustration are omitted so the paws read as clean blobs at
- * small sizes.
- */
 export const AppLogo: React.FC<AppLogoProps> = ({ className }) => (
   <svg
     viewBox="0 0 1024 1024"
@@ -22,8 +15,8 @@ export const AppLogo: React.FC<AppLogoProps> = ({ className }) => (
       y="0"
       width="1024"
       height="1024"
-      rx="192"
-      ry="192"
+      rx="144"
+      ry="144"
       fill="hsl(var(--primary))"
     />
     <g transform="translate(85.64 85.64) scale(0.68)">
