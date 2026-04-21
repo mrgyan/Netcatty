@@ -402,9 +402,15 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
   }, [packages, selectedPackage, snippets]);
 
   const displayedSnippets = useMemo(() => {
-    let result = snippets.filter((s) => (s.package || '') === (selectedPackage || ''));
-    // Apply search filter
-    if (search.trim()) {
+    // Search spans all packages (#777): when the user types in the search
+    // box we drop the current-package scoping so cross-package matches are
+    // reachable without navigating into each one. Otherwise the user is
+    // browsing and we keep the package scope.
+    const hasSearch = search.trim().length > 0;
+    let result = hasSearch
+      ? snippets
+      : snippets.filter((s) => (s.package || '') === (selectedPackage || ''));
+    if (hasSearch) {
       const s = search.toLowerCase();
       result = result.filter(sn =>
         sn.label.toLowerCase().includes(s) ||
@@ -1068,7 +1074,10 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
         )}
 
         <div className="flex-1 space-y-3 overflow-y-auto px-4 pb-4">
-          {displayedPackages.length > 0 && (
+          {/* Hide the sub-package grid while searching (#777) — search spans
+              all packages, so showing the package tiles alongside a flat
+              cross-package snippet list is noisy. */}
+          {displayedPackages.length > 0 && !search.trim() && (
             <>
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-muted-foreground">{t('snippets.section.packages')}</h3>
@@ -1155,7 +1164,14 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
                             <FileCode size={18} />
                           </div>
                           <div className="w-0 flex-1">
-                            <div className="text-sm font-semibold truncate">{snippet.label}</div>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-sm font-semibold truncate">{snippet.label}</span>
+                              {search.trim() && (snippet.package || '').trim() && (
+                                <span className="shrink-0 text-[10px] px-1.5 py-0 h-4 rounded border border-border text-muted-foreground flex items-center">
+                                  {snippet.package}
+                                </span>
+                              )}
+                            </div>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div className="text-[11px] text-muted-foreground font-mono leading-4 truncate">
