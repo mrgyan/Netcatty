@@ -6,9 +6,6 @@
     </clipPath>
   </defs>
 
-  <!-- Icon body, clipped to rounded square. Everything sits inside the
-       Apple 824-in-1024 safe area so we don't render larger in the Dock
-       than neighbouring apps. -->
   <g clip-path="url(#round)">
     <rect x="100.0" y="100.0" width="824" height="824" fill="#002551" />
     <g transform="translate(231.84 231.84) scale(0.4468)">
@@ -45,10 +42,12 @@
       <g><path style="opacity:1" fill="#8193aa" d="M 232.5,1079.5 C 235.152,1079.41 237.485,1080.08 239.5,1081.5C 236.848,1081.59 234.515,1080.92 232.5,1079.5 Z"/></g>
     </g>
   </g>
-  <!-- Thin inner border, Ghostty-style. Stroked *inside* the rounded rect
-       (half the stroke lives outside the fill; we inset by stroke/2 so
-       the visible border stays within the body). -->
-  <rect x="101.5" y="101.5" width="821" height="821"
-        rx="183.5" ry="183.5"
-        fill="none" stroke="#ffffff" stroke-opacity="0.22" stroke-width="3" />
+  <!-- Inner highlight border — drawn just inside the body so the stroke sits
+       fully within the rounded square (stroke is centred on the rect edge;
+       inset by STROKE/2 so none of it bleeds outside). -->
+  <rect x="104.0" y="104.0"
+        width="816" height="816"
+        rx="181.0" ry="181.0"
+        fill="none" stroke="#ffffff" stroke-opacity="0.4"
+        stroke-width="8" />
 </svg>
