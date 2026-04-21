@@ -1,4 +1,4 @@
-import { MouseEvent,useCallback,useMemo,useState } from 'react';
+import { MouseEvent,useCallback,useMemo,useRef,useState } from 'react';
 import { ConnectionLog,Host,SerialConfig,Snippet,TerminalSession,Workspace,WorkspaceViewMode } from '../../domain/models';
 import {
 appendPaneToWorkspaceRoot,
@@ -25,6 +25,12 @@ export interface LogView {
 export const useSessionState = () => {
   const [sessions, setSessions] = useState<TerminalSession[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  // Latest workspaces snapshot for synchronous existence checks outside
+  // setWorkspaces updaters — React doesn't guarantee updaters run
+  // synchronously, so relying on a flag flipped inside them to decide
+  // whether to also call setSessions is racy and can leave orphan panes.
+  const workspacesRef = useRef(workspaces);
+  workspacesRef.current = workspaces;
   // activeTabId is now managed by external store - components subscribe directly
   const setActiveTabId = activeTabStore.setActiveTabId;
   const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
@@ -534,6 +540,14 @@ export const useSessionState = () => {
     // them here to avoid a partially-constructed session.
     if (host.protocol === 'serial') return null;
 
+    // Synchronously verify the workspace exists BEFORE queuing any
+    // state updates. Previously we flipped an `inserted` flag inside
+    // setWorkspaces' updater and checked it after the call — under
+    // concurrent rendering or StrictMode double-invoke the read could
+    // observe a stale value, leading to a workspace pane being queued
+    // without the matching session ever being written.
+    if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
+
     const newSessionId = crypto.randomUUID();
     const newSession: TerminalSession = {
       id: newSessionId,
@@ -549,23 +563,14 @@ export const useSessionState = () => {
       workspaceId,
     };
 
-    let inserted = false;
-    setWorkspaces(prev => {
-      const target = prev.find(w => w.id === workspaceId);
-      if (!target) return prev;
-      inserted = true;
-      return prev.map(ws => {
-        if (ws.id !== workspaceId) return ws;
-        return {
-          ...ws,
-          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
-          focusedSessionId: newSessionId,
-        };
-      });
-    });
-
-    if (!inserted) return null;
-
+    setWorkspaces(prev => prev.map(ws => {
+      if (ws.id !== workspaceId) return ws;
+      return {
+        ...ws,
+        root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+        focusedSessionId: newSessionId,
+      };
+    }));
     setSessions(prev => [...prev, newSession]);
     // Keep the workspace tab active (not the new session id, which is
     // a child of it); focus inside the workspace is handled via
@@ -587,6 +592,10 @@ export const useSessionState = () => {
     },
     direction: SplitDirection = 'vertical',
   ): string | null => {
+    // Same synchronous existence check as appendHostToWorkspace — see
+    // that helper for the rationale.
+    if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
+
     const newSessionId = crypto.randomUUID();
     const localHostId = `local-${newSessionId}`;
     const newSession: TerminalSession = {
@@ -605,23 +614,14 @@ export const useSessionState = () => {
       workspaceId,
     };
 
-    let inserted = false;
-    setWorkspaces(prev => {
-      const target = prev.find(w => w.id === workspaceId);
-      if (!target) return prev;
-      inserted = true;
-      return prev.map(ws => {
-        if (ws.id !== workspaceId) return ws;
-        return {
-          ...ws,
-          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
-          focusedSessionId: newSessionId,
-        };
-      });
-    });
-
-    if (!inserted) return null;
-
+    setWorkspaces(prev => prev.map(ws => {
+      if (ws.id !== workspaceId) return ws;
+      return {
+        ...ws,
+        root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+        focusedSessionId: newSessionId,
+      };
+    }));
     setSessions(prev => [...prev, newSession]);
     setActiveTabId(workspaceId);
     return newSessionId;
