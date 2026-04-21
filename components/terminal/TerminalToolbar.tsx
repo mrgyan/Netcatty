@@ -2,7 +2,7 @@
  * Terminal Toolbar
  * Displays SFTP, Scripts, Theme, Highlight, Search buttons and close button in terminal status bar
  */
-import { Check, FolderInput, Languages, MoreHorizontal, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
+import { Check, FolderInput, Languages, MoreVertical, X, Zap, Palette, Search, TextCursorInput } from 'lucide-react';
 import React, { useState } from 'react';
 import { useI18n } from '../../application/i18n/I18nProvider';
 import { Host } from '../../types';
@@ -61,6 +61,46 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
 
     return (
         <TooltipProvider delayDuration={500} skipDelayDuration={100} disableHoverableContent>
+            <HostKeywordHighlightPopover
+                host={host}
+                onUpdateHost={onUpdateHost}
+                isOpen={highlightPopoverOpen}
+                setIsOpen={setHighlightPopoverOpen}
+                buttonClassName={buttonBase}
+            />
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        className={buttonBase}
+                        aria-label={t("terminal.toolbar.composeBar")}
+                        aria-pressed={isComposeBarOpen}
+                        onClick={onToggleComposeBar}
+                    >
+                        <TextCursorInput size={12} />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("terminal.toolbar.composeBar")}</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        className={buttonBase}
+                        aria-label={t("terminal.toolbar.searchTerminal")}
+                        aria-pressed={isSearchOpen}
+                        onClick={onToggleSearch}
+                    >
+                        <Search size={12} />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t("terminal.toolbar.searchTerminal")}</TooltipContent>
+            </Tooltip>
+
             {/* Overflow menu — collapses the four opener-style actions
                 (SFTP / Encoding / Scripts / Terminal Settings) behind a
                 single ⋮ trigger so the toolbar doesn't feel crowded.
@@ -76,13 +116,13 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                                 className={buttonBase}
                                 aria-label={t("terminal.toolbar.more")}
                             >
-                                <MoreHorizontal size={14} />
+                                <MoreVertical size={14} />
                             </Button>
                         </PopoverTrigger>
                     </TooltipTrigger>
                     <TooltipContent>{t("terminal.toolbar.more")}</TooltipContent>
                 </Tooltip>
-                <PopoverContent className="w-48 p-1" align="start">
+                <PopoverContent className="w-48 p-1" align="end">
                     {!hidesSftp && (
                         <PopoverClose asChild>
                             <button
@@ -139,46 +179,6 @@ export const TerminalToolbar: React.FC<TerminalToolbarProps> = ({
                     )}
                 </PopoverContent>
             </Popover>
-
-            <HostKeywordHighlightPopover
-                host={host}
-                onUpdateHost={onUpdateHost}
-                isOpen={highlightPopoverOpen}
-                setIsOpen={setHighlightPopoverOpen}
-                buttonClassName={buttonBase}
-            />
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="secondary"
-                        size="icon"
-                        className={buttonBase}
-                        aria-label={t("terminal.toolbar.composeBar")}
-                        aria-pressed={isComposeBarOpen}
-                        onClick={onToggleComposeBar}
-                    >
-                        <TextCursorInput size={12} />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("terminal.toolbar.composeBar")}</TooltipContent>
-            </Tooltip>
-
-            <Tooltip>
-                <TooltipTrigger asChild>
-                    <Button
-                        variant="secondary"
-                        size="icon"
-                        className={buttonBase}
-                        aria-label={t("terminal.toolbar.searchTerminal")}
-                        aria-pressed={isSearchOpen}
-                        onClick={onToggleSearch}
-                    >
-                        <Search size={12} />
-                    </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t("terminal.toolbar.searchTerminal")}</TooltipContent>
-            </Tooltip>
 
             {showClose && onClose && (
                 <Tooltip>
