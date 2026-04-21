@@ -15,8 +15,8 @@ export const AppLogo: React.FC<AppLogoProps> = ({ className }) => (
       y="0"
       width="1024"
       height="1024"
-      rx="144"
-      ry="144"
+      rx="192"
+      ry="192"
       fill="hsl(var(--primary))"
     />
     <g transform="translate(85.64 85.64) scale(0.68)">
