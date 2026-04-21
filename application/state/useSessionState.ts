@@ -540,12 +540,9 @@ export const useSessionState = () => {
     // them here to avoid a partially-constructed session.
     if (host.protocol === 'serial') return null;
 
-    // Synchronously verify the workspace exists BEFORE queuing any
-    // state updates. Previously we flipped an `inserted` flag inside
-    // setWorkspaces' updater and checked it after the call — under
-    // concurrent rendering or StrictMode double-invoke the read could
-    // observe a stale value, leading to a workspace pane being queued
-    // without the matching session ever being written.
+    // Cheap early-exit using the ref when the workspace is clearly
+    // absent. The authoritative check lives inside the setWorkspaces
+    // updater below so we also cover the concurrent-close race.
     if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
 
     const newSessionId = crypto.randomUUID();
@@ -563,19 +560,27 @@ export const useSessionState = () => {
       workspaceId,
     };
 
-    setWorkspaces(prev => prev.map(ws => {
-      if (ws.id !== workspaceId) return ws;
-      return {
-        ...ws,
-        root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
-        focusedSessionId: newSessionId,
-      };
-    }));
-    setSessions(prev => [...prev, newSession]);
-    // Keep the workspace tab active (not the new session id, which is
-    // a child of it); focus inside the workspace is handled via
-    // workspace.focusedSessionId above.
-    setActiveTabId(workspaceId);
+    // Nest setSessions + setActiveTabId inside the setWorkspaces updater
+    // so we only commit the session when the workspace update actually
+    // matched — otherwise a concurrent closeWorkspace between the ref
+    // check and the updater firing would leave an orphan session with a
+    // workspaceId pointing at nothing, and active tab would jump to a
+    // closed id. The inner setSessions is idempotent (id dedupe) so
+    // StrictMode's dev-time double-invoke does not duplicate the row.
+    setWorkspaces(prev => {
+      const target = prev.find(w => w.id === workspaceId);
+      if (!target) return prev;
+      setSessions(s => s.some(x => x.id === newSessionId) ? s : [...s, newSession]);
+      setActiveTabId(workspaceId);
+      return prev.map(ws => {
+        if (ws.id !== workspaceId) return ws;
+        return {
+          ...ws,
+          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+          focusedSessionId: newSessionId,
+        };
+      });
+    });
     return newSessionId;
   }, [setActiveTabId]);
 
@@ -592,8 +597,8 @@ export const useSessionState = () => {
     },
     direction: SplitDirection = 'vertical',
   ): string | null => {
-    // Same synchronous existence check as appendHostToWorkspace — see
-    // that helper for the rationale.
+    // Same pattern as appendHostToWorkspace — ref guard + authoritative
+    // inside-updater match to cover concurrent closeWorkspace.
     if (!workspacesRef.current.some(w => w.id === workspaceId)) return null;
 
     const newSessionId = crypto.randomUUID();
@@ -614,16 +619,20 @@ export const useSessionState = () => {
       workspaceId,
     };
 
-    setWorkspaces(prev => prev.map(ws => {
-      if (ws.id !== workspaceId) return ws;
-      return {
-        ...ws,
-        root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
-        focusedSessionId: newSessionId,
-      };
-    }));
-    setSessions(prev => [...prev, newSession]);
-    setActiveTabId(workspaceId);
+    setWorkspaces(prev => {
+      const target = prev.find(w => w.id === workspaceId);
+      if (!target) return prev;
+      setSessions(s => s.some(x => x.id === newSessionId) ? s : [...s, newSession]);
+      setActiveTabId(workspaceId);
+      return prev.map(ws => {
+        if (ws.id !== workspaceId) return ws;
+        return {
+          ...ws,
+          root: appendPaneToWorkspaceRoot(ws.root, newSessionId, direction),
+          focusedSessionId: newSessionId,
+        };
+      });
+    });
     return newSessionId;
   }, [setActiveTabId]);
 
