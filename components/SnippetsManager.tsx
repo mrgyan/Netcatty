@@ -1225,10 +1225,14 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
             </div>
           )}
 
-          {/* Search-with-no-results feedback (#777 codex follow-up). Without
-              this, when a query matches no snippets AND the package tile
-              grid is hidden, the content area would be completely blank. */}
-          {search.trim() && displayedSnippets.length === 0 && displayedPackages.length === 0 && snippets.length > 0 && (
+          {/* Search-with-no-results feedback (#777 codex follow-up). Package
+              tiles are already hidden during search, so the only visible
+              surface is the flat snippet list — if that's empty the content
+              area would be blank without this fallback. We don't gate on
+              displayedPackages.length because those tiles aren't rendered
+              while search is active (workspaces with packages were still
+              getting a blank area). */}
+          {search.trim() && displayedSnippets.length === 0 && snippets.length > 0 && (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <div className="h-14 w-14 rounded-2xl bg-secondary/80 flex items-center justify-center mb-3">
                 <Search size={24} className="opacity-60" />
