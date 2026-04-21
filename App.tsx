@@ -1245,6 +1245,12 @@ function App({ settings }: { settings: SettingsState }) {
       case 'commandPalette':
         setIsQuickSwitcherOpen(true);
         break;
+      case 'newWorkspace':
+        // Dedicated shortcut to launch the AddToWorkspaceDialog in
+        // create mode — same entry as QuickSwitcher's "New Workspace"
+        // button, but without having to open QS first.
+        setAddToWorkspaceDialog({ mode: 'create' });
+        break;
       case 'portForwarding':
         // Navigate to vault and open port forwarding section
         setActiveTabId('vault');
