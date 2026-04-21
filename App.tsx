@@ -44,6 +44,7 @@ import { Label } from './components/ui/label';
 import { ToastProvider, toast } from './components/ui/toast';
 import { VaultView, VaultSection } from './components/VaultView';
 import { QuickAddSnippetDialog } from './components/QuickAddSnippetDialog';
+import { AddToWorkspaceDialog } from './components/workspace/AddToWorkspaceDialog';
 import { KeyboardInteractiveModal, KeyboardInteractiveRequest } from './components/KeyboardInteractiveModal';
 import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal';
 import { cn } from './lib/utils';
@@ -178,6 +179,15 @@ function App({ settings }: { settings: SettingsState }) {
 
   const [isQuickSwitcherOpen, setIsQuickSwitcherOpen] = useState(false);
   const [isCreateWorkspaceOpen, setIsCreateWorkspaceOpen] = useState(false);
+  // Combined state for the AddToWorkspaceDialog. null = closed; mode
+  // determines whether picking targets appends them to an existing
+  // workspace (focus sidebar "+") or spins up a brand-new workspace
+  // tab (QuickSwitcher's New Workspace button).
+  const [addToWorkspaceDialog, setAddToWorkspaceDialog] = useState<
+    | { mode: 'append'; workspaceId: string }
+    | { mode: 'create' }
+    | null
+  >(null);
   const [quickSearch, setQuickSearch] = useState('');
   // Protocol selection dialog state for QuickSwitcher
   const [protocolSelectHost, setProtocolSelectHost] = useState<Host | null>(null);
@@ -292,6 +302,9 @@ function App({ settings }: { settings: SettingsState }) {
     createWorkspaceWithHosts,
     createWorkspaceFromSessions,
     addSessionToWorkspace,
+    appendHostToWorkspace,
+    appendLocalTerminalToWorkspace,
+    createWorkspaceFromTargets,
     updateSplitSizes,
     splitSession,
     toggleWorkspaceViewMode,
@@ -1800,6 +1813,9 @@ function App({ settings }: { settings: SettingsState }) {
           onTerminalDataCapture={handleTerminalDataCapture}
           onCreateWorkspaceFromSessions={createWorkspaceFromSessions}
           onAddSessionToWorkspace={addSessionToWorkspace}
+          onRequestAddToWorkspace={(workspaceId) =>
+            setAddToWorkspaceDialog({ mode: 'append', workspaceId })
+          }
           onUpdateSplitSizes={updateSplitSizes}
           onSetDraggingSessionId={setDraggingSessionId}
           onToggleWorkspaceViewMode={toggleWorkspaceViewMode}
@@ -1856,6 +1872,36 @@ function App({ settings }: { settings: SettingsState }) {
         }
       />
 
+      {/* Root-mounted AddToWorkspaceDialog — triggered by the focus-mode
+          "+" button (mode='append') or QuickSwitcher's "New Workspace"
+          button (mode='create'). Single instance so dialog state and
+          styling stay consistent across entry points. */}
+      {addToWorkspaceDialog && (
+        <AddToWorkspaceDialog
+          open
+          onOpenChange={(open) => { if (!open) setAddToWorkspaceDialog(null); }}
+          hosts={hosts}
+          workspaceTitle={
+            addToWorkspaceDialog.mode === 'append'
+              ? workspaces.find((w) => w.id === addToWorkspaceDialog.workspaceId)?.title
+              : 'New Workspace'
+          }
+          onAdd={(targets) => {
+            if (addToWorkspaceDialog.mode === 'append') {
+              for (const target of targets) {
+                if (target.kind === 'local') {
+                  appendLocalTerminalToWorkspace(addToWorkspaceDialog.workspaceId);
+                } else {
+                  appendHostToWorkspace(addToWorkspaceDialog.workspaceId, target.host);
+                }
+              }
+            } else {
+              createWorkspaceFromTargets(targets);
+            }
+          }}
+        />
+      )}
+
       {isQuickSwitcherOpen && (
         <Suspense fallback={null}>
           <LazyQuickSwitcher
@@ -1879,7 +1925,8 @@ function App({ settings }: { settings: SettingsState }) {
             }}
             onCreateWorkspace={() => {
               setIsQuickSwitcherOpen(false);
-              setIsCreateWorkspaceOpen(true);
+              setQuickSearch('');
+              setAddToWorkspaceDialog({ mode: 'create' });
             }}
             onClose={() => {
               setIsQuickSwitcherOpen(false);

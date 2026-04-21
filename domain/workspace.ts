@@ -15,23 +15,57 @@ export const pruneWorkspaceNode = (node: WorkspaceNode, targetSessionId: string)
   }
 
   const nextChildren: WorkspaceNode[] = [];
-  const nextSizes: number[] = [];
-  const sizeList = node.sizes && node.sizes.length === node.children.length ? node.sizes : node.children.map(() => 1);
 
-  node.children.forEach((child, idx) => {
+  node.children.forEach((child) => {
     const pruned = pruneWorkspaceNode(child, targetSessionId);
     if (pruned) {
       nextChildren.push(pruned);
-      nextSizes.push(sizeList[idx] ?? 1);
     }
   });
 
   if (nextChildren.length === 0) return null;
   if (nextChildren.length === 1) return nextChildren[0];
 
-  const total = nextSizes.reduce((acc, n) => acc + n, 0) || 1;
-  const normalized = nextSizes.map(n => n / total);
+  // Rebalance surviving siblings to equal sizes — keeps the layout
+  // predictable after removal instead of inheriting the closed pane's
+  // skew into the remaining panes.
+  const equalSize = 1 / nextChildren.length;
+  const normalized = nextChildren.map(() => equalSize);
   return { ...node, children: nextChildren, sizes: normalized };
+};
+
+/**
+ * Append a new pane containing `sessionId` to the end of the workspace
+ * root's split. If the root already splits in the requested direction,
+ * the new pane becomes its last sibling and all sibling sizes are reset
+ * to equal. Otherwise the root is wrapped in a new split (same behaviour
+ * as the existing `insertPaneIntoWorkspace(root, id, { targetSessionId:
+ * undefined })` path) with two equal children.
+ */
+export const appendPaneToWorkspaceRoot = (
+  root: WorkspaceNode,
+  sessionId: string,
+  direction: SplitDirection = 'vertical',
+): WorkspaceNode => {
+  const newPane: WorkspaceNode = { id: crypto.randomUUID(), type: 'pane', sessionId };
+
+  if (root.type === 'split' && root.direction === direction) {
+    const nextChildren = [...root.children, newPane];
+    const equalSize = 1 / nextChildren.length;
+    return {
+      ...root,
+      children: nextChildren,
+      sizes: nextChildren.map(() => equalSize),
+    };
+  }
+
+  return {
+    id: crypto.randomUUID(),
+    type: 'split',
+    direction,
+    children: [root, newPane],
+    sizes: [0.5, 0.5],
+  };
 };
 
 const createSplitFromPane = (
