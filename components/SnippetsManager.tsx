@@ -1231,6 +1231,23 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
               </div>
             </div>
           )}
+
+          {/* Search-with-no-results feedback (#777 codex follow-up). Without
+              this, when a query matches no snippets AND the package tile
+              grid is hidden, the content area would be completely blank. */}
+          {search.trim() && displayedSnippets.length === 0 && displayedPackages.length === 0 && snippets.length > 0 && (
+            <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+              <div className="h-14 w-14 rounded-2xl bg-secondary/80 flex items-center justify-center mb-3">
+                <Search size={24} className="opacity-60" />
+              </div>
+              <h3 className="text-base font-semibold text-foreground mb-1">
+                {t('snippets.search.noResults.title')}
+              </h3>
+              <p className="text-xs text-center max-w-sm">
+                {t('snippets.search.noResults.desc', { query: search.trim() })}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
