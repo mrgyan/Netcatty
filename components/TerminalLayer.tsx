@@ -29,7 +29,10 @@ import { cn, normalizeLineEndings } from '../lib/utils';
 import { detectLocalOs } from '../lib/localShell';
 import { useStoredString } from '../application/state/useStoredString';
 import { useStoredNumber } from '../application/state/useStoredNumber';
-import { STORAGE_KEY_SIDE_PANEL_WIDTH } from '../infrastructure/config/storageKeys';
+import {
+  STORAGE_KEY_SIDE_PANEL_WIDTH,
+  STORAGE_KEY_WORKSPACE_FOCUS_SIDEBAR_WIDTH,
+} from '../infrastructure/config/storageKeys';
 import { buildCacheKey } from '../application/state/sftp/sharedRemoteHostCache';
 import type { DropEntry } from '../lib/sftpFileUtils';
 import { GroupConfig, Host, Identity, KnownHost, SSHKey, Snippet, TerminalSession, TerminalTheme, Workspace, WorkspaceNode } from '../types';
@@ -46,6 +49,7 @@ import { TerminalComposeBar } from './terminal/TerminalComposeBar';
 import { TERMINAL_THEMES } from '../infrastructure/config/terminalThemes';
 import { useCustomThemes } from '../application/state/customThemeStore';
 import { Button } from './ui/button';
+import { RippleButton } from './ui/ripple';
 import { ScrollArea } from './ui/scroll-area';
 import { setupMcpApprovalBridge } from '../infrastructure/ai/shared/approvalGate';
 
@@ -654,6 +658,9 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const [sidePanelWidth, setSidePanelWidth, persistSidePanelWidth] = useStoredNumber(
     STORAGE_KEY_SIDE_PANEL_WIDTH, 420, { min: 280, max: 800 },
   );
+  const [focusSidebarWidth, setFocusSidebarWidth, persistFocusSidebarWidth] = useStoredNumber(
+    STORAGE_KEY_WORKSPACE_FOCUS_SIDEBAR_WIDTH, 224, { min: 160, max: 480 },
+  );
   const [sidePanelPosition, setSidePanelPosition] = useStoredString<'left' | 'right'>(
     'netcatty_side_panel_position',
     'left',
@@ -780,6 +787,35 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
       return next;
     });
   }, []);
+
+  // Focus-mode workspace sidebar resize handler. The sidebar is always
+  // anchored to the left of the workspace area, so a rightward drag grows it.
+  const handleFocusSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = focusSidebarWidth;
+
+    let lastWidth = startWidth;
+    let rafId: number | null = null;
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = ev.clientX - startX;
+      lastWidth = Math.max(160, Math.min(480, startWidth + delta));
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        setFocusSidebarWidth(lastWidth);
+      });
+    };
+    const onMouseUp = () => {
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      setFocusSidebarWidth(lastWidth);
+      persistFocusSidebarWidth(lastWidth);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  }, [focusSidebarWidth, setFocusSidebarWidth, persistFocusSidebarWidth]);
 
   // Side panel resize handler
   const handleSidePanelResizeStart = useCallback((e: React.MouseEvent) => {
@@ -1911,9 +1947,22 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
 
     return (
       <div
-        className="w-56 flex-shrink-0 bg-secondary/50 border-r border-border/50 flex flex-col"
+        className="flex-shrink-0 border-r border-border/50 flex flex-col relative"
+        style={{
+          width: focusSidebarWidth,
+          // Paint the sidebar with the terminal's theme background so it
+          // reads as one continuous surface with the focused terminal
+          // (instead of a distinct tinted panel sitting next to it).
+          backgroundColor: resolvedPreviewTheme.colors.background,
+          color: resolvedPreviewTheme.colors.foreground,
+        }}
         data-section="terminal-workspace-sidebar"
       >
+        {/* Resize handle sitting on the right edge of the sidebar. */}
+        <div
+          className="absolute top-0 right-[-3px] h-full w-2 cursor-ew-resize z-30"
+          onMouseDown={handleFocusSidebarResizeStart}
+        />
         {/* Header with view toggle */}
         <div className="h-10 flex items-center justify-between px-3 border-b border-border/50">
           <span className="text-xs font-medium text-muted-foreground">
@@ -1943,17 +1992,25 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   : 'text-red-500';
 
               return (
-                <div
+                <RippleButton
                   key={session.id}
+                  variant="ghost"
                   className={cn(
-                    "flex items-center gap-2 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+                    // Sidebar now paints the terminal-theme bg, so a soft
+                    // foreground/10 overlay on the selected row reads as a
+                    // subtle neutral highlight against it. Unselected rows
+                    // stay transparent and gain the same overlay on hover.
+                    // `hover:text-inherit` pins the text color against the
+                    // ghost variant's hover:text-accent-foreground default
+                    // — text should only flip on selection, never on hover.
+                    "w-full h-auto justify-start gap-2 px-2 py-1.5 font-normal hover:text-inherit",
                     isSelected
-                      ? "bg-primary/15 border border-primary/30"
-                      : "hover:bg-secondary/80 border border-transparent"
+                      ? "bg-foreground/10 text-foreground hover:bg-foreground/15"
+                      : "bg-transparent text-foreground/75 hover:bg-foreground/10",
                   )}
                   onClick={() => onSetWorkspaceFocusedSession?.(activeWorkspace.id, session.id)}
                 >
-                  <div className="relative">
+                  <div className="relative flex-shrink-0">
                     {host ? (
                       <DistroAvatar host={host} fallback={session.hostLabel} size="sm" />
                     ) : (
@@ -1964,13 +2021,15 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                       className={cn("absolute -bottom-0.5 -right-0.5 fill-current", statusColor)}
                     />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium truncate">{session.hostLabel}</div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <div className={cn("text-xs truncate", isSelected ? "font-semibold" : "font-medium")}>
+                      {session.hostLabel}
+                    </div>
                     <div className="text-[10px] text-muted-foreground truncate">
                       {session.username}@{session.hostname}
                     </div>
                   </div>
-                </div>
+                </RippleButton>
               );
             })}
           </div>
@@ -1992,14 +2051,18 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
           zIndex: isTerminalLayerVisible ? 10 : 0,
         }}
       >
-        <div className={cn("flex-1 flex min-h-0 relative", sidePanelPosition === 'right' && "flex-row-reverse")}>
-        {/* Side panel with tab header + content (SFTP / Scripts / Theme) */}
+        <div className="flex-1 flex min-h-0 relative">
+        {/* Side panel with tab header + content (SFTP / Scripts / Theme).
+            Uses `order-last` instead of flex-row-reverse on the parent so the
+            workspace focus-mode sidebar and terminal area below stay in source
+            order (sidebar on the left) regardless of the side panel's side. */}
         {(isSidePanelOpenForCurrentTab || mountedSftpTabIds.length > 0 || mountedAiTabIds.length > 0) && (
           <>
             <div
               style={{ width: isSidePanelOpenForCurrentTab ? sidePanelWidth : 0 }}
               className={cn(
                 "flex-shrink-0 h-full relative z-20",
+                sidePanelPosition === 'right' && "order-last",
               )}
             >
               {isSidePanelOpenForCurrentTab && (
