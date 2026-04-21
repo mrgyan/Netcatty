@@ -1886,7 +1886,13 @@ function App({ settings }: { settings: SettingsState }) {
         <AddToWorkspaceDialog
           open
           onOpenChange={(open) => { if (!open) setAddToWorkspaceDialog(null); }}
-          hosts={hosts}
+          // Filter serial hosts only in append mode — appendHostToWorkspace
+          // has no serial code path. Create mode goes through
+          // createWorkspaceFromTargets, which builds a SerialConfig-backed
+          // session for serial hosts, so those should remain pickable.
+          hosts={addToWorkspaceDialog.mode === 'append'
+            ? hosts.filter((h) => h.protocol !== 'serial')
+            : hosts}
           workspaceTitle={
             addToWorkspaceDialog.mode === 'append'
               ? workspaces.find((w) => w.id === addToWorkspaceDialog.workspaceId)?.title

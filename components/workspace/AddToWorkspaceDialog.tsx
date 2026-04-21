@@ -65,10 +65,12 @@ export const AddToWorkspaceDialog: React.FC<AddToWorkspaceDialogProps> = ({
     return () => document.removeEventListener('mousedown', handler);
   }, [open, onOpenChange]);
 
-  const selectableHosts = useMemo(
-    () => hosts.filter((h) => h.protocol !== 'serial'),
-    [hosts],
-  );
+  // NOTE: no serial filter here — callers decide which subset of
+  // hosts to pass based on mode. `appendHostToWorkspace` cannot build
+  // a serial session, so append mode passes non-serial hosts only;
+  // `createWorkspaceFromTargets` handles serial explicitly, so create
+  // mode passes everything.
+  const selectableHosts = hosts;
 
   const localMatches = useMemo(() => {
     const term = query.trim().toLowerCase();
