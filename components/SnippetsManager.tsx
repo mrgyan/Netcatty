@@ -1228,11 +1228,13 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
           {/* Search-with-no-results feedback (#777 codex follow-up). Package
               tiles are already hidden during search, so the only visible
               surface is the flat snippet list — if that's empty the content
-              area would be blank without this fallback. We don't gate on
-              displayedPackages.length because those tiles aren't rendered
-              while search is active (workspaces with packages were still
-              getting a blank area). */}
-          {search.trim() && displayedSnippets.length === 0 && snippets.length > 0 && (
+              area would be blank without this fallback. The gate intentionally
+              excludes the fully-empty workspace (snippets.length === 0 AND
+              displayedPackages.length === 0), which the global "Create
+              snippet" empty state renders instead — avoids stacking two
+              empty states. Package-only workspaces (no snippets yet) still
+              get this feedback when searching. */}
+          {search.trim() && displayedSnippets.length === 0 && (snippets.length > 0 || displayedPackages.length > 0) && (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
               <div className="h-14 w-14 rounded-2xl bg-secondary/80 flex items-center justify-center mb-3">
                 <Search size={24} className="opacity-60" />
