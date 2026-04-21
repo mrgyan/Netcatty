@@ -1827,6 +1827,18 @@ export class CloudSyncManager {
             '[CloudSyncManager] syncAll: connected providers hold divergent bases (multi-account setup?). Uploading the conflict-merged payload will replace each provider\'s current remote. See I-7 in PR #720 for context.',
             summaries,
           );
+          // Surface the same finding to the UI so multi-account / intentionally
+          // diverged configurations can be warned visibly instead of silently
+          // having one provider's data merged over another's (#779 follow-up).
+          this.emit({
+            type: 'PROVIDERS_DIVERGED',
+            summaries: summaries.map((s) => ({
+              provider: s.provider as CloudProvider,
+              hosts: s.hosts,
+              keys: s.keys,
+              snippets: s.snippets,
+            })),
+          });
         }
       } catch (diagError) {
         // Non-fatal diagnostic; never let it block the sync.
