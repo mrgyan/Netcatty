@@ -2725,11 +2725,6 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
                                             managed
                                           </Badge>
                                         )}
-                                        {search.trim() && (safeHost.group || "").trim() && (
-                                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 shrink-0 font-normal text-muted-foreground">
-                                            {safeHost.group}
-                                          </Badge>
-                                        )}
                                       </div>
                                       <div className="text-[11px] text-muted-foreground font-mono truncate leading-4">
                                         {safeHost.username}@{safeHost.hostname}

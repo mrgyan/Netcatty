@@ -1164,14 +1164,7 @@ const SnippetsManager: React.FC<SnippetsManagerProps> = ({
                             <FileCode size={18} />
                           </div>
                           <div className="w-0 flex-1">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <span className="text-sm font-semibold truncate">{snippet.label}</span>
-                              {search.trim() && (snippet.package || '').trim() && (
-                                <span className="shrink-0 text-[10px] px-1.5 py-0 h-4 rounded border border-border text-muted-foreground flex items-center">
-                                  {snippet.package}
-                                </span>
-                              )}
-                            </div>
+                            <div className="text-sm font-semibold truncate">{snippet.label}</div>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div className="text-[11px] text-muted-foreground font-mono leading-4 truncate">
