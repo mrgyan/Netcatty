@@ -1598,24 +1598,26 @@ const VaultViewInner: React.FC<VaultViewProps> = ({
       <TooltipProvider delayDuration={100}>
         <div
           className={cn(
-            "bg-secondary/80 border-r border-border/60 flex flex-col transition-all duration-200",
+            "bg-secondary border-r border-border/60 flex flex-col transition-all duration-200",
             sidebarCollapsed ? "w-14" : "w-52"
           )}
           data-section="vault-sidebar"
         >
           <div className={cn(
-            "py-4 flex items-center",
+            "pt-5 pb-6 flex items-center",
             sidebarCollapsed ? "px-2 justify-center" : "px-4"
           )}>
             <Tooltip delayDuration={500}>
               <TooltipTrigger asChild>
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                  className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+                  className="flex items-center gap-2.5 hover:opacity-80 transition-opacity"
                 >
                   <AppLogo className="h-8 w-8 flex-shrink-0" />
                   {!sidebarCollapsed && (
-                    <p className="text-sm font-bold text-foreground">Netcatty</p>
+                    <p className="text-xl font-black italic tracking-tight text-foreground leading-none">
+                      Netcatty
+                    </p>
                   )}
                 </button>
               </TooltipTrigger>
