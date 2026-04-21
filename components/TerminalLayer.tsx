@@ -1945,16 +1945,32 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
   const renderFocusModeSidebar = () => {
     if (!activeWorkspace || !isFocusMode) return null;
 
+    // Use terminal-theme colors for every surface in here so the sidebar
+    // stays readable when the app theme and terminal theme diverge
+    // (e.g. followAppTerminalTheme=off, light app + dark terminal).
+    // Tailwind's bg-foreground/* / text-foreground classes bind to app
+    // theme vars, so we derive row colors from the terminal theme
+    // directly with color-mix.
+    const termBg = resolvedPreviewTheme.colors.background;
+    const termFg = resolvedPreviewTheme.colors.foreground;
+    const selectedBg = `color-mix(in srgb, ${termFg} 10%, transparent)`;
+    const selectedHoverBg = `color-mix(in srgb, ${termFg} 15%, transparent)`;
+    const unselectedHoverBg = `color-mix(in srgb, ${termFg} 10%, transparent)`;
+    const unselectedFg = `color-mix(in srgb, ${termFg} 75%, ${termBg} 25%)`;
+    const mutedFg = `color-mix(in srgb, ${termFg} 55%, ${termBg} 45%)`;
+    const separator = `color-mix(in srgb, ${termFg} 10%, ${termBg} 90%)`;
+
     return (
       <div
-        className="flex-shrink-0 border-r border-border/50 flex flex-col relative"
+        className="flex-shrink-0 flex flex-col relative"
         style={{
           width: focusSidebarWidth,
           // Paint the sidebar with the terminal's theme background so it
           // reads as one continuous surface with the focused terminal
           // (instead of a distinct tinted panel sitting next to it).
-          backgroundColor: resolvedPreviewTheme.colors.background,
-          color: resolvedPreviewTheme.colors.foreground,
+          backgroundColor: termBg,
+          color: termFg,
+          borderRight: `1px solid ${separator}`,
         }}
         data-section="terminal-workspace-sidebar"
       >
@@ -1964,14 +1980,18 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
           onMouseDown={handleFocusSidebarResizeStart}
         />
         {/* Header with view toggle */}
-        <div className="h-10 flex items-center justify-between px-3 border-b border-border/50">
-          <span className="text-xs font-medium text-muted-foreground">
+        <div
+          className="h-10 flex items-center justify-between px-3"
+          style={{ borderBottom: `1px solid ${separator}` }}
+        >
+          <span className="text-xs font-medium" style={{ color: mutedFg }}>
             Terminals · {workspaceSessions.length}
           </span>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 w-7 p-0"
+            className="h-7 w-7 p-0 hover:text-inherit"
+            style={{ color: mutedFg }}
             onClick={() => onToggleWorkspaceViewMode?.(activeWorkspace.id)}
             title="Switch to Split View"
           >
@@ -1991,30 +2011,34 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                   ? 'text-amber-500'
                   : 'text-red-500';
 
+              const restBg = isSelected ? selectedBg : 'transparent';
+              const hoverBg = isSelected ? selectedHoverBg : unselectedHoverBg;
+              const rowFg = isSelected ? termFg : unselectedFg;
+
               return (
                 <RippleButton
                   key={session.id}
                   variant="ghost"
-                  className={cn(
-                    // Sidebar now paints the terminal-theme bg, so a soft
-                    // foreground/10 overlay on the selected row reads as a
-                    // subtle neutral highlight against it. Unselected rows
-                    // stay transparent and gain the same overlay on hover.
-                    // `hover:text-inherit` pins the text color against the
-                    // ghost variant's hover:text-accent-foreground default
-                    // — text should only flip on selection, never on hover.
-                    "w-full h-auto justify-start gap-2 px-2 py-1.5 font-normal hover:text-inherit",
-                    isSelected
-                      ? "bg-foreground/10 text-foreground hover:bg-foreground/15"
-                      : "bg-transparent text-foreground/75 hover:bg-foreground/10",
-                  )}
+                  // Row colors are terminal-theme derived (see renderFocusModeSidebar
+                  // top). `hover:text-inherit` pins text against ghost variant's
+                  // hover:text-accent-foreground default; hover bg is swapped
+                  // via inline style so we stay on terminal-theme alpha rather
+                  // than Tailwind's app-theme foreground color.
+                  className="w-full h-auto justify-start gap-2 px-2 py-1.5 font-normal hover:text-inherit"
+                  style={{ backgroundColor: restBg, color: rowFg }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = hoverBg;
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = restBg;
+                  }}
                   onClick={() => onSetWorkspaceFocusedSession?.(activeWorkspace.id, session.id)}
                 >
                   <div className="relative flex-shrink-0">
                     {host ? (
                       <DistroAvatar host={host} fallback={session.hostLabel} size="sm" />
                     ) : (
-                      <Server size={16} className="text-muted-foreground" />
+                      <Server size={16} style={{ color: mutedFg }} />
                     )}
                     <Circle
                       size={6}
@@ -2025,7 +2049,7 @@ const TerminalLayerInner: React.FC<TerminalLayerProps> = ({
                     <div className={cn("text-xs truncate", isSelected ? "font-semibold" : "font-medium")}>
                       {session.hostLabel}
                     </div>
-                    <div className="text-[10px] text-muted-foreground truncate">
+                    <div className="text-[10px] truncate" style={{ color: mutedFg }}>
                       {session.username}@{session.hostname}
                     </div>
                   </div>
