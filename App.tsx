@@ -1894,11 +1894,18 @@ function App({ settings }: { settings: SettingsState }) {
           }
           onAdd={(targets) => {
             if (addToWorkspaceDialog.mode === 'append') {
+              // Match the workspace root's current split direction so
+              // the new panes peer the existing siblings instead of
+              // wrapping the whole tree into one side of a fresh split
+              // (which would happen if we always passed the helper's
+              // default 'vertical').
+              const ws = workspaces.find((w) => w.id === addToWorkspaceDialog.workspaceId);
+              const rootDir = ws && ws.root.type === 'split' ? ws.root.direction : 'vertical';
               for (const target of targets) {
                 if (target.kind === 'local') {
-                  appendLocalTerminalToWorkspace(addToWorkspaceDialog.workspaceId);
+                  appendLocalTerminalToWorkspace(addToWorkspaceDialog.workspaceId, undefined, rootDir);
                 } else {
-                  appendHostToWorkspace(addToWorkspaceDialog.workspaceId, target.host);
+                  appendHostToWorkspace(addToWorkspaceDialog.workspaceId, target.host, rootDir);
                 }
               }
             } else {

@@ -15,22 +15,39 @@ export const pruneWorkspaceNode = (node: WorkspaceNode, targetSessionId: string)
   }
 
   const nextChildren: WorkspaceNode[] = [];
+  const nextSizes: number[] = [];
+  const sizeList = node.sizes && node.sizes.length === node.children.length
+    ? node.sizes
+    : node.children.map(() => 1 / node.children.length);
+  let removedDirectChild = false;
 
-  node.children.forEach((child) => {
+  node.children.forEach((child, idx) => {
     const pruned = pruneWorkspaceNode(child, targetSessionId);
     if (pruned) {
       nextChildren.push(pruned);
+      nextSizes.push(sizeList[idx] ?? 1 / node.children.length);
+    } else {
+      removedDirectChild = true;
     }
   });
 
   if (nextChildren.length === 0) return null;
   if (nextChildren.length === 1) return nextChildren[0];
 
-  // Rebalance surviving siblings to equal sizes — keeps the layout
-  // predictable after removal instead of inheriting the closed pane's
-  // skew into the remaining panes.
-  const equalSize = 1 / nextChildren.length;
-  const normalized = nextChildren.map(() => equalSize);
+  // Only rebalance siblings to equal sizes when this level actually
+  // lost one of its direct children. If the prune happened deeper in
+  // one branch, this split's direct children are unchanged and their
+  // original ratios must be preserved (otherwise e.g. a root 0.8/0.2
+  // split gets rewritten to 0.5/0.5 when a grand-child pane closes).
+  if (removedDirectChild) {
+    const equalSize = 1 / nextChildren.length;
+    return { ...node, children: nextChildren, sizes: nextChildren.map(() => equalSize) };
+  }
+
+  // Preserve existing ratios; normalise defensively in case sibling
+  // subtrees changed shape (e.g. a split collapsed to a single pane).
+  const total = nextSizes.reduce((acc, n) => acc + n, 0) || 1;
+  const normalized = nextSizes.map(n => n / total);
   return { ...node, children: nextChildren, sizes: normalized };
 };
 
