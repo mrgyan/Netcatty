@@ -8,7 +8,7 @@
  */
 
 import { ChevronRight, Edit2, FileCode, Package, Plus, Search, Trash2, Zap } from 'lucide-react';
-import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { cn } from '../lib/utils';
 import { Snippet } from '../types';
@@ -89,13 +89,28 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
     return set;
   }, [packages, snippets]);
 
-  // Default: expand every package so the user sees everything without drilling.
-  // Also re-runs when packages change so newly added ones are shown expanded.
+  // Track every package we've ever observed so we can tell "new" from
+  // "previously-seen-but-user-collapsed". Without this, any unrelated refresh
+  // that reduced prev.size (because the user collapsed a row) would
+  // incorrectly trip a bulk re-expand.
+  const seenPackagesRef = useRef<Set<string>>(new Set());
+
+  // Default: auto-expand packages the first time they appear, so the user sees
+  // everything without drilling in. After that, respect the user's collapse
+  // choices across unrelated refreshes.
   useEffect(() => {
+    const seen = seenPackagesRef.current;
+    const newlySeen: string[] = [];
+    normalizedPackages.forEach((p) => {
+      if (!seen.has(p)) {
+        seen.add(p);
+        newlySeen.push(p);
+      }
+    });
+    if (newlySeen.length === 0) return;
     setExpandedPaths((prev) => {
-      if (prev.size >= normalizedPackages.size) return prev;
       const next = new Set(prev);
-      normalizedPackages.forEach((p) => next.add(p));
+      newlySeen.forEach((p) => next.add(p));
       return next;
     });
   }, [normalizedPackages]);
