@@ -39,7 +39,7 @@ import { PassphraseModal, PassphraseRequest } from './components/PassphraseModal
 import { cn } from './lib/utils';
 import { classifyLocalShellType } from './lib/localShell';
 import { useDiscoveredShells, resolveShellSetting } from './lib/useDiscoveredShells';
-import { ConnectionLog, Host, HostProtocol, SerialConfig, TerminalSession, TerminalTheme } from './types';
+import { ConnectionLog, Host, HostProtocol, PortForwardingRule, SerialConfig, TerminalSession, TerminalTheme } from './types';
 import { LogView as LogViewType } from './application/state/useSessionState';
 import type { SftpView as SftpViewComponent } from './components/SftpView';
 import type { TerminalLayer as TerminalLayerComponent } from './components/TerminalLayer';
@@ -383,17 +383,31 @@ function App({ settings }: { settings: SettingsState }) {
 
   // Get port forwarding rules and import function
   const { rules: portForwardingRules, importRules: importPortForwardingRules, startTunnel, stopTunnel } = usePortForwardingState();
-
-  const portForwardingRulesForSync = useMemo(
-    () =>
-      portForwardingRules.map((rule) => ({
+// ...existing code...
+const portForwardingRulesForSync = useMemo<PortForwardingRule[]>(
+  () =>
+    portForwardingRules.map(
+      (rule): PortForwardingRule => ({
         ...rule,
         status: "inactive",
         error: undefined,
         lastUsedAt: undefined,
-      })),
-    [portForwardingRules],
-  );
+      }),
+    ),
+  [portForwardingRules],
+);
+// ...existing code...
+
+  // const portForwardingRulesForSync = useMemo(
+  //   () =>
+  //     portForwardingRules.map((rule) => ({
+  //       ...rule,
+  //       status: "inactive",
+  //       error: undefined,
+  //       lastUsedAt: undefined,
+  //     })),
+  //   [portForwardingRules],
+  // );
 
   // Auto-sync hook for cloud sync
   const { syncNow: handleSyncNow, emptyVaultConflict, resolveEmptyVaultConflict } = useAutoSync({
@@ -681,10 +695,13 @@ function App({ settings }: { settings: SettingsState }) {
         };
       });
 
-      void bridge.updateTrayMenuData({
-        sessions: sessionsForTray,
-        portForwardRules: portForwardingRules,
-      });
+      const currentBridge = netcattyBridge.get();
+      if (currentBridge?.updateTrayMenuData) {
+        void currentBridge.updateTrayMenuData({
+          sessions: sessionsForTray,
+          portForwardRules: portForwardingRules,
+        });
+      }
     }, 250);
 
     return () => {
@@ -1606,10 +1623,6 @@ function App({ settings }: { settings: SettingsState }) {
               handleCreateLocalTerminal(shell);
               setIsQuickSwitcherOpen(false);
               setQuickSearch('');
-            }}
-            onCreateWorkspace={() => {
-              setIsQuickSwitcherOpen(false);
-              setIsCreateWorkspaceOpen(true);
             }}
             onClose={() => {
               setIsQuickSwitcherOpen(false);

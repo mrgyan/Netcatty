@@ -87,6 +87,8 @@
     "@tailwindcss/postcss": "^4.1.17",
     "@tailwindcss/vite": "^4.1.17",
     "@types/node": "^25.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
     "@typescript-eslint/eslint-plugin": "^8.49.0",
     "@typescript-eslint/parser": "^8.49.0",
     "@vitejs/plugin-react": "^5.1.2",
@@ -106,6 +108,10 @@
   },
   "overrides": {
     "cpu-features": "npm:empty-npm-package@1.0.0",
-    "axios": "1.13.5"
+    "axios": "1.13.5",
+    "node-gyp": "12.1.0"
+  },
+  "build": {
+    "nativeRebuilder": "legacy"
   }
 }

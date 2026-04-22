@@ -1,3 +1,13 @@
+const { existsSync } = require('node:fs');
+const path = require('node:path');
+
+const hasWindowsArm64Toolset = existsSync(
+    path.join(
+        'C:/Program Files (x86)/Microsoft Visual Studio/18/BuildTools/MSBuild/Microsoft/VC/v180/Platforms/arm64'
+    )
+);
+const windowsTargetArchs = hasWindowsArm64Toolset ? ['x64', 'arm64'] : ['x64'];
+
 /**
  * @type {import('electron-builder').Configuration}
  */
@@ -83,14 +93,15 @@ module.exports = {
         ]
     },
     win: {
+        signAndEditExecutable: false,
         target: [
             {
                 target: 'nsis',
-                arch: ['x64', 'arm64']
+                arch: windowsTargetArchs
             },
             {
                 target: 'portable',
-                arch: ['x64', 'arm64']
+                arch: windowsTargetArchs
             }
         ]
     },
