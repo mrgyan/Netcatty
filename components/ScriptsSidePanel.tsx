@@ -7,7 +7,7 @@
  * list of matching snippets regardless of package nesting.
  */
 
-import { ChevronRight, Edit2, Package, Plus, Search, Trash2, Zap } from 'lucide-react';
+import { ChevronRight, Edit2, FileCode, Package, Plus, Search, Trash2, Zap } from 'lucide-react';
 import React, { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useI18n } from '../application/i18n/I18nProvider';
 import { cn } from '../lib/utils';
@@ -20,6 +20,7 @@ import {
 } from './ui/context-menu';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './ui/tooltip';
 
 interface ScriptsSidePanelProps {
   snippets: Snippet[];
@@ -217,6 +218,7 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
   const hasAnyContent = snippets.length > 0 || packages.length > 0;
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div
       className="h-full flex flex-col bg-background overflow-hidden"
       data-section="snippets-panel"
@@ -301,6 +303,7 @@ const ScriptsSidePanelInner: React.FC<ScriptsSidePanelProps> = ({
         </div>
       </ScrollArea>
     </div>
+    </TooltipProvider>
   );
 };
 
@@ -354,17 +357,32 @@ const SnippetRow: React.FC<SnippetRowProps> = ({
 }) => (
   <ContextMenu>
     <ContextMenuTrigger asChild>
-      <button
-        type="button"
-        onClick={onClick}
-        className="w-full text-left pr-3 py-1.5 hover:bg-accent/50 transition-colors flex flex-col gap-0.5"
-        style={{ paddingLeft: 8 + depth * 14 + 14 }}
-      >
-        <span className="text-xs font-medium truncate">{snippet.label}</span>
-        <span className="text-muted-foreground truncate font-mono text-[10px] max-w-full">
-          {subtitle ?? snippet.command}
-        </span>
-      </button>
+      <div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={onClick}
+              className="w-full flex items-center gap-1.5 pr-3 py-1.5 text-left hover:bg-accent/50 transition-colors overflow-hidden"
+              style={{ paddingLeft: 8 + depth * 14 + 14 }}
+            >
+              <FileCode size={12} className="shrink-0 text-muted-foreground" />
+              <span className="flex-1 min-w-0 truncate text-xs font-medium">{snippet.label}</span>
+              {subtitle && (
+                <span className="shrink-0 max-w-[40%] truncate text-[10px] text-muted-foreground">
+                  {subtitle}
+                </span>
+              )}
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" align="start" className="max-w-[480px]">
+            <div className="font-medium text-xs mb-1 break-all">{snippet.label}</div>
+            <pre className="font-mono text-[11px] whitespace-pre-wrap break-all leading-snug opacity-90">
+              {snippet.command}
+            </pre>
+          </TooltipContent>
+        </Tooltip>
+      </div>
     </ContextMenuTrigger>
     <ContextMenuContent>
       <ContextMenuItem onClick={onEdit}>
