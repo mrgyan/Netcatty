@@ -2229,12 +2229,9 @@ function registerHandlers(ipcMain) {
       if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
         agentEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
       }
-      if (isClaudeAgent && apiKey) {
-        agentEnv.ANTHROPIC_API_KEY = apiKey;
-      }
-      if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
-        agentEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
-      }
+      // Claude agent auth is owned entirely by its CLI config/login state
+      // (`claude auth login`, ~/.claude settings, or ANTHROPIC_* in the user's
+      // shell env). netcatty's provider list must not override it.
 
       if (isCopilotAgent) {
         copilotConfigInfo = prepareCopilotHome(shellEnv, [], chatSessionId || `models_${Date.now()}`);
@@ -2320,6 +2317,14 @@ function registerHandlers(ipcMain) {
     try {
       const existingRun = acpChatRuns.get(chatSessionId);
       if (existingRun && existingRun.requestId !== requestId) {
+        // Capture whether the prior run was already cancelled (via the
+        // cancel IPC) BEFORE we set the flag ourselves — the cancel IPC
+        // contract explicitly preserves the provider session so the
+        // next prompt can continue in the same conversation. Tearing
+        // down the provider here would silently break that contract in
+        // the "click Stop, then immediately send next prompt" flow,
+        // discarding the recovered ACP session.
+        const alreadyCancelledViaIpc = existingRun.cancelRequested;
         existingRun.cancelRequested = true;
         const existingController = acpActiveStreams.get(existingRun.requestId);
         if (existingController) {
@@ -2327,7 +2332,15 @@ function registerHandlers(ipcMain) {
           acpActiveStreams.delete(existingRun.requestId);
         }
         acpRequestSessions.delete(existingRun.requestId);
-        cleanupAcpProvider(chatSessionId);
+        // Only tear down the provider for true interrupt-and-restart
+        // flows (user typed a new prompt while the old one was still
+        // streaming, no explicit cancel). When we do skip cleanup here,
+        // the reuse/reset logic below still handles auth/MCP/permission
+        // changes correctly — the provider is preserved only when
+        // nothing else would require rebuilding it.
+        if (!alreadyCancelledViaIpc) {
+          cleanupAcpProvider(chatSessionId);
+        }
       }
 
       mcpServerBridge.setChatSessionCancelled?.(chatSessionId, false);
@@ -2416,7 +2429,7 @@ function registerHandlers(ipcMain) {
         }
       }
 
-      const authFingerprint = isCodexAgent || isClaudeAgent
+      const authFingerprint = isCodexAgent
         ? getAcpProviderAuthFingerprint(apiKey, resolvedProvider?.provider, codexCustomConfig)
         : null;
       const mcpSnapshot = isCodexAgent
@@ -2479,9 +2492,48 @@ function registerHandlers(ipcMain) {
         providerEntry.mcpFingerprint === mcpSnapshot.fingerprint &&
         providerEntry.permissionMode === currentPermissionMode,
       );
+      const shouldResetProviderForHistoryReplay = Boolean(
+        shouldReuseProvider &&
+        providerEntry?.historyReplayFallback &&
+        Array.isArray(historyMessages) &&
+        historyMessages.length > 0,
+      );
 
-      if (!shouldReuseProvider) {
-        const resumeSessionId = providerEntry?.provider?.getSessionId?.() || existingSessionId || undefined;
+      if (!shouldReuseProvider || shouldResetProviderForHistoryReplay) {
+        const resumeSessionId = shouldResetProviderForHistoryReplay
+          ? undefined
+          : providerEntry?.provider?.getSessionId?.() || existingSessionId || undefined;
+        // Preserve the replay-fallback flag across any recreation where
+        // history recovery is still pending, not just the reset-for-replay
+        // path. Otherwise a provider recreation driven by an orthogonal
+        // change (permission mode / MCP scope / auth fingerprint) between
+        // a still-empty recovered turn and its retry would drop the flag
+        // and lose the recovered conversation on the next turn.
+        //
+        // Also hedge whenever we're spawning a brand-new provider process
+        // that's being told to resume an existing session id (the common
+        // app-restart / reconnect flow — #753). Some ACP agents (Copilot
+        // CLI, some Codex builds) silently spin up a fresh session
+        // instead of erroring with "session not found", so the catch-
+        // block fallback below never fires and the agent ends up with
+        // zero prior context. Scheduling a compact replay on the first
+        // turn guarantees the agent sees durable constraints and the
+        // last few raw turns even when session/load is effectively a
+        // no-op. After the first successful streamed turn the flag
+        // clears (post-stream hook), so steady-state cost stays at
+        // just the latest prompt.
+        const preserveHistoryReplayFallback =
+          shouldResetProviderForHistoryReplay ||
+          Boolean(
+            providerEntry?.historyReplayFallback &&
+            Array.isArray(historyMessages) &&
+            historyMessages.length > 0,
+          ) ||
+          Boolean(
+            resumeSessionId &&
+            Array.isArray(historyMessages) &&
+            historyMessages.length > 0,
+          );
         cleanupAcpProvider(chatSessionId);
 
         const agentEnv = withCliDiscoveryEnv({ ...shellEnv });
@@ -2491,12 +2543,7 @@ function registerHandlers(ipcMain) {
         if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
           agentEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
         }
-        if (isClaudeAgent && apiKey) {
-          agentEnv.ANTHROPIC_API_KEY = apiKey;
-        }
-        if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
-          agentEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
-        }
+        // See comment above: Claude auth is CLI-owned, not provider-driven.
         let copilotConfigInfo = null;
         if (isCopilotAgent) {
           copilotConfigInfo = prepareCopilotHome(shellEnv, mcpSnapshot.mcpServers, chatSessionId);
@@ -2563,7 +2610,7 @@ function registerHandlers(ipcMain) {
           authFingerprint,
           mcpFingerprint: mcpSnapshot.fingerprint,
           permissionMode: currentPermissionMode,
-          historyReplayFallback: false,
+          historyReplayFallback: preserveHistoryReplayFallback,
         };
         acpProviders.set(chatSessionId, providerEntry);
       }
@@ -2618,12 +2665,7 @@ function registerHandlers(ipcMain) {
             if (isCodexAgent && resolvedProvider?.provider?.baseURL) {
               fallbackEnv.OPENAI_BASE_URL = resolvedProvider.provider.baseURL;
             }
-            if (isClaudeAgent && apiKey) {
-              fallbackEnv.ANTHROPIC_API_KEY = apiKey;
-            }
-            if (isClaudeAgent && resolvedProvider?.provider?.baseURL) {
-              fallbackEnv.ANTHROPIC_BASE_URL = resolvedProvider.provider.baseURL;
-            }
+            // See comment above: Claude auth is CLI-owned, not provider-driven.
             if (isCopilotAgent) {
               const fallbackCopilotConfig = prepareCopilotHome(shellEnv, mcpSnapshot.mcpServers, chatSessionId);
               fallbackEnv.COPILOT_HOME = fallbackCopilotConfig.copilotHome;
@@ -2739,14 +2781,17 @@ function registerHandlers(ipcMain) {
         role: "user",
         content: buildMessageContent(contextualPrompt, images),
       };
+      const shouldReplayHistory = Boolean(
+        providerEntry.historyReplayFallback &&
+        Array.isArray(historyMessages) &&
+        historyMessages.length > 0,
+      );
 
       const result = streamText({
         model: modelInstance,
-        messages: providerEntry.historyReplayFallback
+        messages: shouldReplayHistory
           ? [
-              ...(Array.isArray(historyMessages)
-                ? historyMessages.map((msg) => ({ role: msg.role, content: msg.content }))
-                : []),
+              ...historyMessages.map((msg) => ({ role: msg.role, content: msg.content })),
               latestPromptMessage,
             ]
           : [latestPromptMessage],
@@ -2832,6 +2877,21 @@ function registerHandlers(ipcMain) {
             : "Agent returned an empty response.",
         });
       } else {
+        // Clear replay fallback when the recovered turn either streamed
+        // content OR was user-aborted. The empty-but-not-aborted case is
+        // handled in the if-branch above and intentionally keeps the flag
+        // so a follow-up retry can re-replay onto a fresh session.
+        //
+        // Why also clear on abort: if the user actively cancelled, the
+        // freshly recovered ACP session has whatever state was built up so
+        // far. Leaving the flag set would make the next turn trigger
+        // shouldResetProviderForHistoryReplay, which discards the recovered
+        // session (resumeSessionId is forced to undefined in that path) and
+        // re-spends tokens on another compact replay. That breaks the
+        // cancel-preserves-session contract for users who stop early.
+        if (shouldReplayHistory) {
+          providerEntry.historyReplayFallback = false;
+        }
         debugMcpLog("ACP stream done", { requestId, chatSessionId, hasContent });
         if (!isActiveAcpRun(chatSessionId, requestId)) {
           return { ok: true };
@@ -2883,6 +2943,18 @@ function registerHandlers(ipcMain) {
     mcpServerBridge.clearPendingApprovals(effectiveChatSessionId);
     if (activeRun && activeRun.requestId === effectiveRequestId) {
       activeRun.cancelRequested = true;
+    }
+    // Synchronously clear historyReplayFallback on the preserved provider
+    // entry. Without this, a user pressing Stop and immediately sending
+    // the next prompt can have their new request enter the stream
+    // handler before the aborted run's post-stream clearing code runs.
+    // The new turn would then see historyReplayFallback=true, trigger
+    // shouldResetProviderForHistoryReplay, and recreate the provider
+    // without the recovered existingSessionId — discarding the very
+    // session the cancel contract promised to preserve.
+    if (effectiveChatSessionId) {
+      const preservedEntry = acpProviders.get(effectiveChatSessionId);
+      if (preservedEntry) preservedEntry.historyReplayFallback = false;
     }
     const controller = acpActiveStreams.get(effectiveRequestId);
     let cancelled = false;

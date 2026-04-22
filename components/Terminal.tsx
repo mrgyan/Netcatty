@@ -49,6 +49,7 @@ import { ZmodemProgressIndicator } from "./terminal/ZmodemProgressIndicator";
 import { useZmodemTransfer } from "./terminal/hooks/useZmodemTransfer";
 import { createTerminalSessionStarters, type PendingAuth } from "./terminal/runtime/createTerminalSessionStarters";
 import { createXTermRuntime, primaryFontFamily, type XTermRuntime } from "./terminal/runtime/createXTermRuntime";
+import { shouldPreserveTerminalFocusOnMouseDown } from "./terminal/toolbarFocus";
 import { preserveTerminalViewportInScrollback } from "./terminal/clearTerminalViewport";
 import { XTERM_PERFORMANCE_CONFIG } from "../infrastructure/config/xtermPerformance";
 import { useTerminalSearch } from "./terminal/hooks/useTerminalSearch";
@@ -620,6 +621,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
     termRef.current?.focus();
   }, []);
 
+  const handleTopOverlayMouseDownCapture = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    if (!shouldPreserveTerminalFocusOnMouseDown(e.target)) return;
+    e.preventDefault();
+  }, []);
+
   // Subscribe to custom theme changes so editing triggers re-render
   const customThemes = useCustomThemes();
   const hasFontSizeOverride = host.fontSizeOverride === true || (host.fontSizeOverride === undefined && host.fontSize != null);
@@ -793,6 +800,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
           // Autocomplete integration
           onAutocompleteKeyEvent: (e: KeyboardEvent) => autocompleteKeyEventRef.current?.(e) ?? true,
           onAutocompleteInput: (data: string) => autocompleteInputRef.current?.(data),
+          isRestoringSelectionRef,
         });
 
         xtermRuntimeRef.current = runtime;
@@ -1230,7 +1238,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       const hasText = !!selection && selection.length > 0;
       setHasSelection(hasText);
 
-      if (hasText && terminalSettings?.copyOnSelect) {
+      if (hasText && terminalSettings?.copyOnSelect && !isRestoringSelectionRef.current) {
         navigator.clipboard.writeText(selection).catch((err) => {
           logger.warn("Copy on select failed:", err);
         });
@@ -1320,6 +1328,12 @@ const TerminalComponent: React.FC<TerminalProps> = ({
 
   const disableBracketedPasteRef = useRef(terminalSettings?.disableBracketedPaste ?? false);
   disableBracketedPasteRef.current = terminalSettings?.disableBracketedPaste ?? false;
+
+  // True only while createXTermRuntime is programmatically restoring the
+  // selection right after a keystroke (preserveSelectionOnInput). Lets
+  // copy-on-select skip a redundant clipboard write that would otherwise
+  // clobber whatever the user copied elsewhere in the meantime.
+  const isRestoringSelectionRef = useRef(false);
 
   const scrollOnPasteRef = useRef(terminalSettings?.scrollOnPaste ?? true);
   scrollOnPasteRef.current = terminalSettings?.scrollOnPaste ?? true;
@@ -1663,6 +1677,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
       isAlternateScreen={hasMouseTracking}
       onCopy={terminalContextActions.onCopy}
       onPaste={terminalContextActions.onPaste}
+      onPasteSelection={terminalContextActions.onPasteSelection}
       onSelectAll={terminalContextActions.onSelectAll}
       onClear={terminalContextActions.onClear}
       onSelectWord={terminalContextActions.onSelectWord}
@@ -1705,6 +1720,7 @@ const TerminalComponent: React.FC<TerminalProps> = ({
         <div className="absolute left-0 right-0 top-0 z-20 pointer-events-none">
           <div
             className="flex items-center gap-1 px-2 py-0.5 backdrop-blur-md pointer-events-auto min-w-0"
+            onMouseDownCapture={handleTopOverlayMouseDownCapture}
             style={{
               backgroundColor: 'var(--terminal-ui-bg)',
               color: 'var(--terminal-ui-fg)',

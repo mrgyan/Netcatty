@@ -30,7 +30,6 @@ import { createCattyTools } from '../../../infrastructure/ai/sdk/tools';
 import type { NetcattyBridge, ExecutorContext } from '../../../infrastructure/ai/cattyAgent/executor';
 import { runExternalAgentTurn } from '../../../infrastructure/ai/externalAgentAdapter';
 import { runAcpAgentTurn } from '../../../infrastructure/ai/acpAgentAdapter';
-import { findManagedAgentProvider, matchesManagedAgentConfig } from '../../../infrastructure/ai/managedAgents';
 import { classifyError } from '../../../infrastructure/ai/errorClassifier';
 
 // -------------------------------------------------------------------
@@ -356,14 +355,13 @@ export function useAIChatStreaming({
     err: unknown,
   ) => {
     if (abortSignal.aborted) return;
-    let errorStr: string;
-    if (err instanceof Error) errorStr = err.message;
-    else if (typeof err === 'object' && err !== null && 'message' in err) errorStr = String((err as { message: unknown }).message);
-    else if (typeof err === 'string') errorStr = err;
-    else { try { errorStr = JSON.stringify(err) ?? 'Unknown error'; } catch { errorStr = 'Unknown error'; } }
     // Log the full unsanitized error for debugging
-    console.error('[AIChatSidePanel] Stream error (full):', errorStr);
-    const errorInfo = classifyError(errorStr);
+    console.error('[AIChatSidePanel] Stream error (full):', err);
+    // Pass the raw error to classifyError so it can inspect structured
+    // fields (statusCode, responseBody) from APICallError and friends;
+    // string-coercing here would strip the metadata we need to detect
+    // 413 / HTML-error-page / parse-failure scenarios.
+    const errorInfo = classifyError(err);
     updateLastMessage(sessionId, msg => ({
       ...msg,
       statusText: '',
@@ -561,11 +559,10 @@ export function useAIChatStreaming({
             id: generateId(),
             role: 'assistant',
             content: '',
-            errorInfo: classifyError(
-              typedChunk.error instanceof Error ? typedChunk.error.message
-                : typeof typedChunk.error === 'string' ? typedChunk.error
-                : (() => { try { return JSON.stringify(typedChunk.error) ?? 'Unknown error'; } catch { return 'Unknown error'; } })(),
-            ),
+            // Pass the raw error so classifyError can detect 413 / HTML /
+            // schema-parse scenarios via structured fields (statusCode,
+            // responseBody) instead of lossy string conversion.
+            errorInfo: classifyError(typedChunk.error),
             timestamp: Date.now(),
           });
           break;
@@ -608,21 +605,6 @@ export function useAIChatStreaming({
       if (bridge?.aiMcpUpdateSessions) {
         await bridge.aiMcpUpdateSessions(context.terminalSessions, sessionId);
       }
-
-      // Pass only the provider ID — the main process resolves and decrypts the API key itself,
-      // avoiding plaintext key transit across the IPC boundary.
-      // Resolve the correct provider based on agent type:
-      // - Claude agent → anthropic provider (prefer over generic custom)
-      // - Codex agent  → openai provider (fallback to openai-compatible custom)
-      const agentProviderId = (() => {
-        if (matchesManagedAgentConfig(agentConfig, 'claude')) {
-          return findManagedAgentProvider(context.providers, 'claude')?.id;
-        }
-        if (matchesManagedAgentConfig(agentConfig, 'codex')) {
-          return findManagedAgentProvider(context.providers, 'codex')?.id;
-        }
-        return undefined;
-      })();
 
       // Mutable flag: set after tool-result, cleared when new assistant msg is created
       let needsNewAssistantMsg = false;
@@ -705,7 +687,10 @@ export function useAIChatStreaming({
           onDone: () => {},
         },
         abortController.signal,
-        agentProviderId,
+        // Managed ACP agents (codex, claude) must resolve auth from their own
+        // CLI config/login state, so we deliberately pass no providerId here.
+        // See issue #705 for Codex; same reasoning for Claude.
+        undefined,
         context.selectedAgentModel,
         context.existingSessionId,
         context.historyMessages,
