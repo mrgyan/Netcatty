@@ -2251,9 +2251,17 @@ function registerHandlers(ipcMain) {
         ? [...claudeAcp.prependArgs, ...(acpArgs || [])]
         : acpArgs || [];
 
+      // On Windows, .cmd/.bat files cannot be spawned directly — wrap with cmd.exe /c.
+      let spawnCommand = resolvedCommand;
+      let spawnArgs = resolvedArgs;
+      if (process.platform === "win32" && shouldUseShellForCommand(resolvedCommand)) {
+        spawnArgs = ["/c", resolvedCommand, ...resolvedArgs];
+        spawnCommand = process.env.ComSpec || "cmd.exe";
+      }
+
       provider = createACPProvider({
-        command: resolvedCommand,
-        args: resolvedArgs,
+        command: spawnCommand,
+        args: spawnArgs,
         env: agentEnv,
         session: {
           cwd: sessionCwd,
@@ -2564,9 +2572,17 @@ function registerHandlers(ipcMain) {
           : acpArgs || [];
         const sessionMcpServers = isCopilotAgent ? [] : mcpSnapshot.mcpServers;
 
+        // On Windows, .cmd/.bat files cannot be spawned directly — wrap with cmd.exe /c.
+        let spawnCommand = resolvedCommand;
+        let spawnArgs = resolvedArgs;
+        if (process.platform === "win32" && shouldUseShellForCommand(resolvedCommand)) {
+          spawnArgs = ["/c", resolvedCommand, ...resolvedArgs];
+          spawnCommand = process.env.ComSpec || "cmd.exe";
+        }
+
         const provider = createACPProvider({
-          command: resolvedCommand,
-          args: resolvedArgs,
+          command: spawnCommand,
+          args: spawnArgs,
           env: agentEnv,
           session: {
             cwd: sessionCwd,

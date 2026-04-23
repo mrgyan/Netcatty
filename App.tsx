@@ -1450,7 +1450,8 @@ const portForwardingRulesForSync = useMemo<PortForwardingRule[]>(
         onStartSessionDrag={setDraggingSessionId}
         onEndSessionDrag={handleEndSessionDrag}
         onReorderTabs={reorderTabs}
-        showSftpTab={settings.showSftpTab}
+        showSftpTab={settings.showSftpTab} 
+        onCloseTabsBatch={() => {   }}
       />
 
       <div className="flex-1 relative min-h-0">
